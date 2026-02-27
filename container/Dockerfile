@@ -1,5 +1,5 @@
 # Stage 1: Chef - dependency caching
-FROM rust:1.77-bookworm AS chef
+FROM rust:1.91-bookworm AS chef
 RUN cargo install cargo-chef
 WORKDIR /app
 
@@ -10,19 +10,24 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 3: Builder
 FROM chef AS builder
-ARG BINARY_NAME=secure-signer
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN cargo build --release --bin ${BINARY_NAME}
+ARG BINARY_NAME=secure-signer
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --release --bin ${BINARY_NAME}
 
 # Stage 4: Runtime
 FROM debian:bookworm-slim AS runtime
-ARG BINARY_NAME=secure-signer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
+ARG BINARY_NAME=secure-signer
+ENV BINARY_NAME=${BINARY_NAME}
 COPY --from=builder /app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 
 # Create data directories

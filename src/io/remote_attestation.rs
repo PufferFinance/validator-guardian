@@ -1,8 +1,9 @@
 use anyhow::Result;
+use automata_cvm_agent::PublicIdentity;
 use log::info;
 use serde_derive::{Deserialize, Serialize};
 
-use crate::io::cvm_agent::CvmAgentClient;
+use crate::io::cvm_agent::sign_with_session;
 
 /// Attestation evidence from the CVM Agent.
 ///
@@ -14,7 +15,8 @@ use crate::io::cvm_agent::CvmAgentClient;
 pub struct AttestationEvidence {
     pub session_id: String,
     pub signature: String,
-    pub session_public_key: String,
+    pub session_public_key: PublicIdentity,
+    pub owner_public_key: PublicIdentity,
 }
 
 impl AttestationEvidence {
@@ -31,12 +33,12 @@ impl AttestationEvidence {
             return Ok(AttestationEvidence::default());
         }
         info!("Requesting CVM Agent attestation signature");
-        let client = CvmAgentClient::new();
-        let resp = client.sign(data).await?;
+        let resp = sign_with_session(data).await?;
         Ok(AttestationEvidence {
-            session_id: resp.session_id,
-            signature: resp.signature,
-            session_public_key: resp.session_public_key,
+            session_id: resp.session_id.to_string(),
+            signature: resp.signature.to_string(),
+            session_public_key: resp.session_key,
+            owner_public_key: resp.owner_key,
         })
     }
 }

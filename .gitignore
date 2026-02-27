@@ -38,3 +38,4 @@ tests/*rc*.gz
 
 # Preferences
 .vscode/
+/ata_artifacts

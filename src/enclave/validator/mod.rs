@@ -125,7 +125,7 @@ pub async fn attest_fresh_bls_key(
             .collect(),
         session_id: evidence.session_id,
         attestation_signature: evidence.signature,
-        session_public_key: evidence.session_public_key,
+        session_public_key: evidence.session_public_key.key.to_string(),
         guardian_eth_pub_keys: recipient_keys
             .iter()
             .map(|k| crate::crypto::eth_keys::eth_pk_to_hex_uncompressed(&k.guardian_public_key))

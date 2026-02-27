@@ -1,20 +1,19 @@
 services:
   validator:
-    platform: linux/amd64
     image: ghcr.io/pufferfinance/validator:v0.1.0
     build:
-      context: ..
+      context: ../..
       dockerfile: ./container/Dockerfile
       args:
         BINARY_NAME: validator
     ports:
-      - "9001:9001"
+      - "9002:9001"
     env_file:
-      - ./config/validator.env
-      - ./additional-data/env
+      - ./env
     volumes:
-      - ./config/network_config.json:/config/network_config.json:ro
+      - ./network_config.json:/config/network_config.json:ro
       - validator-data:/data
+      - ./cvm-agent.sock:/app/cvm-agent.sock
 
 volumes:
   validator-data:
