@@ -14,6 +14,7 @@ env_logger = "0.10.0"
 log = "0.4.17"
 ethereum_serde_utils = "0.5.1"
 automata-cvm-agent = { git = "https://github.com/automata-network/atakit", branch = "dev" }
+alloy = { version = "1.7.3", features = ["contract", "providers", "transport-http", "sol-types"] }
 
 # crypto deps
 blsttc = { version = "8.0.2", git = "https://github.com/PufferFinance/blsttc" }

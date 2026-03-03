@@ -9,7 +9,7 @@
 
 use alloy::primitives::{Bytes, B256};
 use anyhow::Result;
-use automata_cvm_agent::{CvmAgent, PublicIdentity};
+use automata_cvm_agent::{client::CvmAgent, PublicIdentity};
 use serde::{Deserialize, Serialize};
 
 /// Default path to the CVM agent Unix socket
