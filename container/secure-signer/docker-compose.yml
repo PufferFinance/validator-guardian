@@ -1,6 +1,6 @@
 services:
   secure-signer:
-    image: ghcr.io/pufferfinance/secure-signer:v0.1.0
+    image: ghcr.io/pufferfinance/secure-signer:v0.1.1
     build:
       context: ../..
       dockerfile: ./container/Dockerfile

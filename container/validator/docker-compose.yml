@@ -1,6 +1,6 @@
 services:
   validator:
-    image: ghcr.io/pufferfinance/validator:v0.1.0
+    image: ghcr.io/pufferfinance/validator:v0.1.1
     build:
       context: ../..
       dockerfile: ./container/Dockerfile
