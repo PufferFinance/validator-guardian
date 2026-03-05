@@ -28,6 +28,30 @@ The validator binary runs the validator enclave RPC server. It is responsible fo
 
 **Deployment**: This binary is for external users who want to run their own TDX infrastructure for additional trust guarantees. When no `enclave_url` is configured, coral-cli performs BLS key generation locally using the `generate_bls_keystore_handler` library function — no deployed validator binary is needed.
 
+## TDX attestation
+
+The CVM Agent runs inside the TDX Confidential VM and communicates with the binaries over a Unix socket (`/app/cvm-agent.sock`). Not all endpoints use TDX — only those that need to produce or verify attestation evidence.
+
+### guardian
+
+| Endpoint | TDX usage |
+| -------- | --------- |
+| `POST /eth/v1/keygen` | **Produces attestation.** Generates an ETH key and calls `AttestationEvidence::new()` to sign the public key via the CVM Agent. The returned evidence proves the key was generated inside a TDX enclave. |
+| `POST /guardian/v1/validate-custody` | **Verifies attestation.** When `verify_session` is true, calls `verify_session_evidence()` which reconstructs the validator's attestation payload and verifies its signature on-chain via `SessionRegistry.verifySessionSignature()`. This confirms the BLS keygen payload came from a genuine TDX validator enclave. |
+| `GET /eth/v1/keygen` | No TDX — lists existing ETH keys from disk. |
+| `POST /guardian/v1/sign-exit` | No TDX — signs with the stored BLS key share. |
+| `GET /upcheck` | No TDX — health check. |
+
+### validator
+
+| Endpoint | TDX usage |
+| -------- | --------- |
+| `POST /bls/v1/keygen` | **Produces attestation** when `do_remote_attestation` is true. Generates BLS keys with threshold secret sharing, then calls `AttestationEvidence::new()` to sign the keygen payload via the CVM Agent. When false, returns default empty evidence. |
+| `GET /eth/v1/keystores` | No TDX — lists existing BLS keys from disk. |
+| `POST /api/v1/eth2/sign/:bls_pk_hex` | No TDX — BLS signing with stored key. |
+| `GET /api/v1/eth2/publicKeys` | No TDX — lists BLS public keys. |
+| `GET /upcheck` | No TDX — health check. |
+
 ## Library usage
 
 Both reef and coral also depend on `puffersecuresigner` as a Rust library crate for:
