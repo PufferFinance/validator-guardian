@@ -6,7 +6,9 @@ pub trait GuardianClientTrait {
 
     async fn attest_fresh_eth_key(
         &self,
-        blockhash: &str,
+        block_number: u64,
+        guardian_module_address: &str,
+        chain_id: u64,
     ) -> anyhow::Result<crate::enclave::types::KeyGenResponse>;
 
     async fn list_eth_keys(&self) -> anyhow::Result<crate::enclave::types::ListKeysResponse>;

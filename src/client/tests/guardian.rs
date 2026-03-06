@@ -15,7 +15,11 @@ async fn call_attest_fresh_eth_with_success() {
     // This will panic if the call fails in any way
     let _resp: crate::enclave::types::KeyGenResponse = client
         .guardian
-        .attest_fresh_eth_key("0x0000000000000000000000000000000000000000000000000000000000000000")
+        .attest_fresh_eth_key(
+            0,
+            "0x0000000000000000000000000000000000000000",
+            1,
+        )
         .await
         .unwrap();
 
@@ -23,13 +27,13 @@ async fn call_attest_fresh_eth_with_success() {
 }
 
 #[tokio::test]
-async fn call_attest_fresh_eth_with_failure_bad_blockhash() {
+async fn call_attest_fresh_eth_with_failure_bad_address() {
     let client = super::build_client();
 
     // This will panic if the call fails in any way
     assert!(client
         .guardian
-        .attest_fresh_eth_key("0xdeadbeef") // Not 32B
+        .attest_fresh_eth_key(0, "not_an_address", 1)
         .await
         .is_err())
 }

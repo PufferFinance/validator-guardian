@@ -26,7 +26,11 @@ async fn registration_flow_succeeds() {
     // Guardian generates fresh key
     let resp1: crate::enclave::types::KeyGenResponse = client
         .guardian
-        .attest_fresh_eth_key("0x0000000000000000000000000000000000000000000000000000000000000000")
+        .attest_fresh_eth_key(
+            0,
+            "0x0000000000000000000000000000000000000000",
+            1,
+        )
         .await
         .unwrap();
 
@@ -97,7 +101,11 @@ async fn test_cli_keygen_verified_by_guardians() {
     // Guardian generates fresh key
     let resp1: crate::enclave::types::KeyGenResponse = client
         .guardian
-        .attest_fresh_eth_key("0x0000000000000000000000000000000000000000000000000000000000000000")
+        .attest_fresh_eth_key(
+            0,
+            "0x0000000000000000000000000000000000000000",
+            1,
+        )
         .await
         .unwrap();
 

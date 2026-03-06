@@ -6,7 +6,11 @@ pub async fn handler(
     Json(request_data): Json<crate::enclave::guardian::KeygenWithBlockhashRequest>,
 ) -> axum::response::Response {
     info!("eth_key_gen_with_blockhash_service()");
-    match crate::enclave::guardian::attest_new_eth_key_with_blockhash(&request_data.blockhash).await {
+    match crate::enclave::guardian::attest_new_eth_key_with_blockhash(
+        request_data.block_number,
+        &request_data.guardian_module_address,
+        request_data.chain_id,
+    ).await {
         Ok((evidence, eth_pk)) => {
             let resp = crate::enclave::types::KeyGenResponse::from_eth_key(eth_pk, evidence);
             (axum::http::status::StatusCode::CREATED, Json(resp)).into_response()

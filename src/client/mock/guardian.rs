@@ -62,7 +62,9 @@ impl GuardianClientTrait for MockGuardianClient {
 
     async fn attest_fresh_eth_key(
         &self,
-        _blockhash: &str,
+        _block_number: u64,
+        _guardian_module_address: &str,
+        _chain_id: u64,
     ) -> anyhow::Result<crate::enclave::types::KeyGenResponse> {
         match self
             .attest_fresh_eth_key_responses

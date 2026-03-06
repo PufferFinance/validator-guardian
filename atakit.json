@@ -2,19 +2,19 @@
   "workloads": [
     {
       "name": "secure-signer",
-      "version": "v0.1.2",
+      "version": "v0.1.3",
       "image": "automata-linux:v0.1.4-debug",
       "docker_compose": "./container/secure-signer/docker-compose.yml"
     },
     {
       "name": "validator",
-      "version": "v0.1.2",
+      "version": "v0.1.3",
       "image": "automata-linux:v0.1.4-debug",
       "docker_compose": "./container/validator/docker-compose.yml"
     },
     {
       "name": "guardian",
-      "version": "v0.1.2",
+      "version": "v0.1.3",
       "image": "automata-linux:v0.1.4-debug",
       "docker_compose": "./container/guardian/docker-compose.yml"
     }

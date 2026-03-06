@@ -13,11 +13,15 @@ use ssz::Encode;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct KeygenWithBlockhashRequest {
-    pub blockhash: String,
+    pub block_number: u64,
+    pub guardian_module_address: String,
+    pub chain_id: u64,
 }
 
 pub async fn attest_new_eth_key_with_blockhash(
-    blockhash: &str,
+    block_number: u64,
+    guardian_module_address: &str,
+    chain_id: u64,
 ) -> anyhow::Result<(
     crate::io::remote_attestation::AttestationEvidence,
     ecies::PublicKey,
@@ -25,24 +29,24 @@ pub async fn attest_new_eth_key_with_blockhash(
     info!("attest_new_eth_key_with_blockhash()");
     // Generate a fresh SECP256K1 ETH keypair (saving ETH private key)
     let pk = crate::crypto::eth_keys::eth_key_gen()?;
-    let blockhash: String = crate::strip_0x_prefix!(blockhash);
-    let blockhash = hex::decode(blockhash)?;
 
-    if blockhash.len() != 32 {
-        bail!("Bad blockhash")
-    }
+    let address_str: String = crate::strip_0x_prefix!(guardian_module_address);
+    let address: ethers::types::Address = address_str.parse()
+        .map_err(|e| anyhow!("Invalid guardian_module_address: {}", e))?;
 
-    let mut hasher = sha3::Keccak256::new();
-    hasher.update(&pk.serialize());
-    let pk_hash = hasher.finalize();
+    // Build the same payload the smart contract computes:
+    // keccak256(abi.encode("ROTATE_GUARDIAN_KEY", address(this), block.chainid, blockNumber, pubKey))
+    let payload = ethers::abi::encode(&[
+        ethers::abi::Token::String("ROTATE_GUARDIAN_KEY".to_string()),
+        ethers::abi::Token::Address(address),
+        ethers::abi::Token::Uint(U256::from(chain_id)),
+        ethers::abi::Token::Uint(U256::from(block_number)),
+        ethers::abi::Token::Bytes(pk.serialize().to_vec()),
+    ]);
 
-    // Concatenate the two 32 Bytes
-    let payload = ethers::abi::encode_packed(&[
-        ethers::abi::Token::Bytes(pk_hash.to_vec()),
-        ethers::abi::Token::Bytes(blockhash),
-    ])?;
-
-    // Commit to the payload
+    // Commit to the payload — CVM agent signs keccak256(payload),
+    // which matches the signedMessageHash the contract passes to
+    // SessionRegistry.verifySessionSignature()
     let proof = crate::io::remote_attestation::AttestationEvidence::new(&payload).await?;
     Ok((proof, pk))
 }

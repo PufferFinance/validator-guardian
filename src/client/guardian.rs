@@ -25,10 +25,14 @@ impl GuardianClientTrait for GuardianClient {
 
     async fn attest_fresh_eth_key(
         &self,
-        blockhash: &str,
+        block_number: u64,
+        guardian_module_address: &str,
+        chain_id: u64,
     ) -> anyhow::Result<crate::enclave::types::KeyGenResponse> {
         let data = crate::enclave::guardian::KeygenWithBlockhashRequest {
-            blockhash: blockhash.to_string(),
+            block_number,
+            guardian_module_address: guardian_module_address.to_string(),
+            chain_id,
         };
 
         let resp = self
