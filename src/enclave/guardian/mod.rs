@@ -36,6 +36,11 @@ pub async fn attest_new_eth_key_with_blockhash(
 
     // Build the same payload the smart contract computes:
     // keccak256(abi.encode("ROTATE_GUARDIAN_KEY", address(this), block.chainid, blockNumber, pubKey))
+    info!(
+        "attest_new_eth_key_with_blockhash payload: tag=ROTATE_GUARDIAN_KEY, address={:?}, chain_id={}, block_number={}, pub_key={}",
+        address, chain_id, block_number, hex::encode(pk.serialize())
+    );
+
     let payload = ethers::abi::encode(&[
         ethers::abi::Token::String("ROTATE_GUARDIAN_KEY".to_string()),
         ethers::abi::Token::Address(address),
