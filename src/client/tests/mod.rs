@@ -20,17 +20,15 @@ async fn registration_flow_succeeds() {
     let withdrawal_credentials = [1; 32];
     let threshold = 1;
     let workload_id = "test-workload-id".to_string();
+    let chain_id = 1u64;
+    let guardian_module_address = "0x628b183F248a142A598AA2dcCCD6f7E480a7CcF2".to_string();
 
     let client = build_client();
 
     // Guardian generates fresh key
     let resp1: crate::enclave::types::KeyGenResponse = client
         .guardian
-        .attest_fresh_eth_key(
-            0,
-            "0x0000000000000000000000000000000000000000",
-            1,
-        )
+        .attest_fresh_eth_key(0, "0x0000000000000000000000000000000000000000", 1)
         .await
         .unwrap();
 
@@ -69,6 +67,8 @@ async fn registration_flow_succeeds() {
         workload_id,
         verify_session,
         validator_index: 0,
+        chain_id,
+        guardian_module_address,
     };
 
     // Guardian validates they received custody
@@ -97,15 +97,13 @@ async fn test_cli_keygen_verified_by_guardians() {
     let withdrawal_credentials = [1; 32];
     let threshold = 1;
     let password = "password".to_string();
+    let chain_id = 1u64;
+    let guardian_module_address = "0x628b183F248a142A598AA2dcCCD6f7E480a7CcF2".to_string();
 
     // Guardian generates fresh key
     let resp1: crate::enclave::types::KeyGenResponse = client
         .guardian
-        .attest_fresh_eth_key(
-            0,
-            "0x0000000000000000000000000000000000000000",
-            1,
-        )
+        .attest_fresh_eth_key(0, "0x0000000000000000000000000000000000000000", 1)
         .await
         .unwrap();
 
@@ -135,6 +133,8 @@ async fn test_cli_keygen_verified_by_guardians() {
         workload_id: "".to_string(),
         verify_session,
         validator_index: 0,
+        chain_id,
+        guardian_module_address,
     };
 
     // Guardian validates they received custody
