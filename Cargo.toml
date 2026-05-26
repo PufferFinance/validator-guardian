@@ -22,7 +22,7 @@ libsecp256k1 = "0.7.1"
 rand = "0.8.4"
 rand_chacha = "0.2"
 hex = "0.4.3"
-ecies = { version = "0.2.2", default-features = false, features = ["pure"] }
+ecies = { version = "=0.2.7", default-features = false, features = ["pure"] }
 bytes = "1"
 sha3 = "0.10.6"
 

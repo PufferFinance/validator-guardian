@@ -31,7 +31,8 @@ pub async fn attest_new_eth_key_with_blockhash(
     let pk = crate::crypto::eth_keys::eth_key_gen()?;
 
     let address_str: String = crate::strip_0x_prefix!(guardian_module_address);
-    let address: ethers::types::Address = address_str.parse()
+    let address: ethers::types::Address = address_str
+        .parse()
         .map_err(|e| anyhow!("Invalid guardian_module_address: {}", e))?;
 
     // Build the same payload the smart contract computes:
@@ -68,11 +69,7 @@ pub async fn verify_and_sign_custody_received(
 
     // verify the CVM session evidence
     if request.verify_session {
-        verify_session_evidence(
-            &request.keygen_payload,
-            &request.workload_id,
-        )
-        .await?;
+        verify_session_evidence(&request.keygen_payload, &request.workload_id).await?;
     }
 
     // verify the deposit message is valid
@@ -92,6 +89,8 @@ pub async fn verify_and_sign_custody_received(
         &request.keygen_payload,
         &guardian_enclave_sk,
         &request.validator_index,
+        &request.guardian_module_address,
+        &request.chain_id,
     )
     .await?;
 
@@ -117,8 +116,8 @@ pub async fn verify_session_evidence(
     keygen_payload: &crate::enclave::types::BlsKeygenPayload,
     workload_id: &String,
 ) -> Result<()> {
-    use alloy::primitives::{Address, B256, Bytes as AlloyBytes};
     use crate::io::session_registry;
+    use alloy::primitives::{Address, Bytes as AlloyBytes, B256};
 
     // 1. Structural checks
     if keygen_payload.session_id.is_empty() {
@@ -154,7 +153,10 @@ pub async fn verify_session_evidence(
     let session_id_hex: String = crate::strip_0x_prefix!(&keygen_payload.session_id);
     let session_id_bytes = hex::decode(&session_id_hex)?;
     if session_id_bytes.len() != 32 {
-        bail!("session_id must be 32 bytes, got {}", session_id_bytes.len());
+        bail!(
+            "session_id must be 32 bytes, got {}",
+            session_id_bytes.len()
+        );
     }
     let session_id = B256::from_slice(&session_id_bytes);
 
@@ -164,15 +166,21 @@ pub async fn verify_session_evidence(
     let signature: AlloyBytes = hex::decode(&sig_hex)?.into();
 
     // 4. Read env config
-    let rpc_url = std::env::var("SESSION_REGISTRY_RPC_URL")
-        .map_err(|_| anyhow!("SESSION_REGISTRY_RPC_URL env var is required for session verification"))?;
+    let rpc_url = std::env::var("SESSION_REGISTRY_RPC_URL").map_err(|_| {
+        anyhow!("SESSION_REGISTRY_RPC_URL env var is required for session verification")
+    })?;
     let registry_address: Address = std::env::var("SESSION_REGISTRY_ADDRESS")
-        .map_err(|_| anyhow!("SESSION_REGISTRY_ADDRESS env var is required for session verification"))?
+        .map_err(|_| {
+            anyhow!("SESSION_REGISTRY_ADDRESS env var is required for session verification")
+        })?
         .parse()
         .map_err(|_| anyhow!("SESSION_REGISTRY_ADDRESS is not a valid address"))?;
 
     // 5. Verify signature via SessionRegistry (off-chain eth_call)
-    info!("Verifying session signature via SessionRegistry at {}", registry_address);
+    info!(
+        "Verifying session signature via SessionRegistry at {}",
+        registry_address
+    );
     let valid = session_registry::verify_session_signature(
         &rpc_url,
         registry_address,
@@ -195,7 +203,10 @@ pub async fn verify_session_evidence(
         let workload_id_hex: String = crate::strip_0x_prefix!(workload_id);
         let workload_id_bytes = hex::decode(&workload_id_hex)?;
         if workload_id_bytes.len() != 32 {
-            bail!("workload_id must be 32 bytes, got {}", workload_id_bytes.len());
+            bail!(
+                "workload_id must be 32 bytes, got {}",
+                workload_id_bytes.len()
+            );
         }
         let expected_workload_id = B256::from_slice(&workload_id_bytes);
 
@@ -224,10 +235,12 @@ fn parse_session_public_key(
     if let Ok(identity) =
         serde_json::from_str::<automata_cvm_agent::PublicIdentity>(session_public_key)
     {
-        return Ok(crate::io::session_registry::ISessionRegistry::PublicIdentity {
-            typeId: identity.type_id,
-            key: identity.key,
-        });
+        return Ok(
+            crate::io::session_registry::ISessionRegistry::PublicIdentity {
+                typeId: identity.type_id,
+                key: identity.key,
+            },
+        );
     }
 
     // Fall back to hex-encoded secp256k1 key
@@ -236,10 +249,12 @@ fn parse_session_public_key(
         .map_err(|e| anyhow!("session_public_key is neither valid JSON nor hex: {}", e))?;
 
     // ES256K (secp256k1) = typeId 3
-    Ok(crate::io::session_registry::ISessionRegistry::PublicIdentity {
-        typeId: 3, // AlgoId::Es256K
-        key: key_bytes.into(),
-    })
+    Ok(
+        crate::io::session_registry::ISessionRegistry::PublicIdentity {
+            typeId: 3, // AlgoId::Es256K
+            key: key_bytes.into(),
+        },
+    )
 }
 
 fn verify_deposit_message(keygen_payload: &crate::enclave::types::BlsKeygenPayload) -> Result<()> {
@@ -298,11 +313,15 @@ async fn approve_custody(
     keygen_payload: &crate::enclave::types::BlsKeygenPayload,
     guardian_enclave_sk: &EthSecretKey,
     validator_index: &ValidatorIndex,
+    guardian_module_address: &String,
+    chain_id: &u64,
 ) -> Result<String> {
     let mut hasher = sha3::Keccak256::new();
 
     // validatorIndex, pubKey, withdrawalCredentials, signature, depositDataRoot
     let msg = ethers::abi::encode(&[
+        ethers::abi::Token::Address(guardian_module_address.parse()?),
+        ethers::abi::Token::Uint(U256::from(*chain_id)),
         ethers::abi::Token::Uint(U256::from(validator_index.clone())),
         ethers::abi::Token::Bytes(
             keygen_payload
@@ -380,7 +399,7 @@ mod tests {
     use crate::enclave::types::BlsKeygenPayload;
     use tree_hash::TreeHash;
 
-    fn setup() -> (BlsKeygenPayload, Vec<EthSecretKey>, String) {
+    fn setup() -> (BlsKeygenPayload, Vec<EthSecretKey>, String, String, u64) {
         let p = BlsKeygenPayload {
             bls_pub_key_set: "b927f246ed54236ce810f1296e9ee85574c4a59d7472aa50f9674d8ba8eb0d8b697065e22f86cad69f8526ee343fa4819390e8251a3b097db2d8916219069f38bb28f5c7371b84fbe3fbb9ed0e323fb3c5375f9efde1e139ad869e40621098b08f5bb3edce5981b4a238af666d1bda4dcccb0ab51f709db89f00358003315fabe55df8549e4d7a53d63a936789839664".to_owned(),
             bls_pub_key: "b927f246ed54236ce810f1296e9ee85574c4a59d7472aa50f9674d8ba8eb0d8b697065e22f86cad69f8526ee343fa481".to_owned(),
@@ -437,12 +456,20 @@ mod tests {
         ];
 
         let workload_id = "test-workload-id".to_owned();
-        (p, guardian_eth_sks, workload_id)
+        let chain_id = 1u64;
+        let guardian_module_address = "0x628b183F248a142A598AA2dcCCD6f7E480a7CcF2".to_owned();
+        (
+            p,
+            guardian_eth_sks,
+            workload_id,
+            guardian_module_address,
+            chain_id,
+        )
     }
 
     #[test]
     fn test_setup_valid() {
-        let (resp, g_sks, _workload_id) = setup();
+        let (resp, g_sks, _workload_id, _guardian_module_address, _chain_id) = setup();
         let n = resp.bls_enc_priv_key_shares.len();
         let pk_set: blsttc::PublicKeySet =
             blsttc::PublicKeySet::from_bytes(hex::decode(&resp.bls_pub_key_set).unwrap()).unwrap();
@@ -505,7 +532,7 @@ mod tests {
 
     #[test]
     fn test_verify_custody_with_success() {
-        let (resp, g_sks, _workload_id) = setup();
+        let (resp, g_sks, _workload_id, _guardian_module_address, _chain_id) = setup();
 
         for g_sk in g_sks {
             assert!(verify_custody(&resp, &g_sk).is_ok());
@@ -514,14 +541,14 @@ mod tests {
 
     #[test]
     fn test_verify_custody_with_fail() {
-        let (resp, _g_sks, _workload_id) = setup();
+        let (resp, _g_sks, _workload_id, _guardian_module_address, _chain_id) = setup();
         let g_sk = EthSecretKey::default();
         assert!(verify_custody(&resp, &g_sk).is_err());
     }
 
     #[tokio::test]
     async fn test_verify_session_evidence_structural_checks() {
-        let (resp, _g_sks, _workload_id) = setup();
+        let (resp, _g_sks, _workload_id, _guardian_module_address, _chain_id) = setup();
 
         // Structural checks pass (session fields are non-empty)
         assert!(!resp.session_id.is_empty());
@@ -536,22 +563,26 @@ mod tests {
 
     #[test]
     fn test_verify_deposit_message() {
-        let (resp, _g_sks, _workload_id) = setup();
+        let (resp, _g_sks, _workload_id, _guardian_module_address, _chain_id) = setup();
         verify_deposit_message(&resp).unwrap();
     }
 
     #[tokio::test]
     async fn test_approve_custody() {
-        let (resp, g_sks, _workload_id) = setup();
+        let (resp, g_sks, _workload_id, _guardian_module_address, _chain_id) = setup();
 
         for g_sk in g_sks {
-            assert!(approve_custody(&resp, &g_sk, &0).await.is_ok());
+            assert!(
+                approve_custody(&resp, &g_sk, &0, &_guardian_module_address, &_chain_id)
+                    .await
+                    .is_ok()
+            );
         }
     }
 
     #[test]
     fn test_sign_vem() {
-        let (resp, _g_sks, _workload_id) = setup();
+        let (resp, _g_sks, _workload_id, _guardian_module_address, _chain_id) = setup();
 
         let mut sig_shares: Vec<blsttc::SignatureShare> = Vec::new();
         let mut msg_root = [0_u8; 32];
