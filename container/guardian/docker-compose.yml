@@ -1,6 +1,6 @@
 services:
   guardian:
-    image: ghcr.io/pufferfinance/guardian:v0.1.5
+    image: ghcr.io/pufferfinance/guardian:v0.1.8
     build:
       context: ../..
       dockerfile: ./container/Dockerfile
