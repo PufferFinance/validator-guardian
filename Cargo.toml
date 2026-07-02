@@ -50,6 +50,20 @@ clap = { version = "4.1.1", features = ["derive"], optional = true }
 ethers = "2.0.8"
 async-trait = "0.1.73"
 
+# Antithesis testing. The SDK is a no-op / low-overhead outside the Antithesis
+# environment (it dlopens /usr/lib/libvoidstar.so and falls back to no-op when
+# absent), so it is safe to leave in production builds of the guardian binary.
+# Coverage instrumentation is gated behind the `antithesis_instr` feature because
+# it requires matching coverage rustflags — see antithesis/Dockerfile.
+antithesis_sdk = "0.2"
+antithesis-instrumentation = { version = "0.1", optional = true }
+
+[features]
+# Enable only for Antithesis instrumented builds; must be paired with the
+# sancov coverage rustflags (see antithesis/Dockerfile). Enabling this without
+# those flags — or those flags without this feature — produces an invalid binary.
+antithesis_instr = ["dep:antithesis-instrumentation"]
+
 
 [dev-dependencies]
 reqwest = { version = "0.11.16", features = ["json"] }

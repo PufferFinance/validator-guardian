@@ -2,6 +2,13 @@
 extern crate anyhow;
 extern crate env_logger;
 
+// Antithesis coverage instrumentation. The `antithesis-instrumentation` crate
+// links the Antithesis coverage runtime; it must be referenced at least once so
+// Cargo does not drop it as unused during linking. Gated behind the
+// `antithesis_instr` feature and paired with sancov rustflags (antithesis/Dockerfile).
+#[cfg(feature = "antithesis_instr")]
+use antithesis_instrumentation as _;
+
 pub mod constants;
 pub mod crypto;
 pub mod enclave;

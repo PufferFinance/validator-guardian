@@ -1,0 +1,12 @@
+# BuildKit uses this file (next to antithesis/Dockerfile) instead of the repo
+# root .dockerignore when building with -f antithesis/Dockerfile. Paths are
+# relative to the build context (the repo root).
+#
+# Keep excludes conservative: the Rust build needs Cargo.toml, Cargo.lock, src/,
+# and the antithesis/ scripts the workload/session-registry stages COPY.
+.git
+target
+**/target
+rust-toolchain.toml
+ata_artifacts
+antithesis/scratchbook

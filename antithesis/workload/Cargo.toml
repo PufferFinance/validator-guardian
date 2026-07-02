@@ -1,0 +1,25 @@
+[package]
+name = "guardian-workload"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone Antithesis workload/driver crate for the guardian SUT. Kept OUT of
+# the puffersecuresigner package so no Antithesis-only code can reach production
+# (the root crate never builds anything under antithesis/). This is deliberately
+# minimal today; when crypto-bearing properties (custody / preimage) arrive, add
+#   puffersecuresigner = { path = "../.." }
+# here to reuse the project's BLS/ECIES/request types and GuardianClient.
+
+[[bin]]
+name = "unauthenticated_request"
+path = "src/bin/unauthenticated_request.rs"
+
+[dependencies]
+# Antithesis SDK: assertions + deterministic randomness. No-op outside Antithesis.
+antithesis_sdk = "0.2"
+# rustls-tls so the binary carries its own TLS and does not depend on a system
+# OpenSSL soname in the runtime image.
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

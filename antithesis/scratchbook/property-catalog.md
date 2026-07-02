@@ -1,7 +1,7 @@
 ---
 sut_path: /home/fawad/puffer/projects/validator-guardian
-commit: f7dbd88d99de21a6d8caba5f7de8216624ab1098
-updated: 2026-06-30
+commit: 8e3e3f2630f1a4a6650857f817d1b667b0a6718c
+updated: 2026-07-01
 external_references:
   - path: /home/fawad/puffer/projects/reef
     why: reef-guardian is the sole real consumer; pins which request fields are populated (verify_session=false, workload_id="", guardian_index=0) and confirms each guardian submits its own provision_node on-chain (no off-chain aggregation).
@@ -22,10 +22,12 @@ external_references:
 
 - **Assertion types** are Antithesis SDK assertions (`Always`,
   `AlwaysOrUnreachable`, `Sometimes(cond)`, `Reachable`, `Unreachable`) — they
-  report outcomes and guide search; they do **not** crash the program. **None
-  exist yet** (`existing-assertions.md`); every instrumentation note below is
-  **MISSING** unless stated otherwise, and the `antithesis-sdk` crate must be
-  added before SUT-side assertions compile.
+  report outcomes and guide search; they do **not** crash the program. The
+  `antithesis-sdk` crate is now a dependency (added in setup) and the guardian
+  carries a bootstrap `assert_reachable!`. As of 2026-07-01, **one catalog
+  property is implemented** ([[no-request-authentication]] — see its **Status**
+  row); every other instrumentation note below is still **MISSING** unless its
+  entry says otherwise.
 - **Open Questions** under each property list the *remaining* unresolved
   questions, tagged `(partial: …)` / `(needs human input)`. As a deliberate
   (non-default) deviation from the skill convention's "remove resolved questions",
@@ -582,11 +584,12 @@ The cryptographic well-formedness gate (S1–S4) that runs on every
 |---|---|
 | **Type** | Reachability (documenting) |
 | **Property** | Every privileged guardian endpoint is invokable with no authentication; the security model rests entirely on network isolation. |
-| **Invariant** | `Reachable("privileged endpoint served an unauthenticated request")` — documents the threat model that gates exploitability of F1/W10/W1/W3 and the panic DoS. |
+| **Invariant** | `Reachable("guardian served a privileged request with no authentication present")` — documents the threat model that gates exploitability of F1/W10/W1/W3 and the panic DoS. |
 | **Antithesis Angle** | The workload *is* an unauthenticated caller; this property frames why the adversarial properties matter. |
 | **Why It Matters** | If the network-isolation assumption is wrong (Q4), the whole catalog's "attacker-controlled field" properties become remotely exploitable. |
 | **Priority** | Low (gating fact, not a bug per se) |
 | **Confidence** | High — no tower/auth middleware on the router. |
+| **Status** | **Implemented (2026-07-01)** — workload-side `Reachable` in `antithesis/workload/src/bin/unauthenticated_request.rs`; test command `security/singleton_driver_unauthenticated_request` probes a randomly-drawn privileged endpoint (keygen POST/GET, validate-custody, sign-exit) unauthenticated and fires the assertion when the response is not 401/403. Chosen as the first (getting-started) property: no dependency on the deferred CVM-agent mock or anvil contracts. Regression tripwire for a future auth layer (401 ⇒ assertion goes unreachable). |
 
 **Open Questions:**
 - Are `validate-custody`/`sign-exit` reachable by untrusted clients in the TDX topology? *(Q4 — highest-leverage question across the catalog; needs human input.)*

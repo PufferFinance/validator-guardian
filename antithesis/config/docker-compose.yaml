@@ -1,0 +1,81 @@
+name: validator-guardian
+
+# Antithesis test harness for the guardian binary. Three services:
+#   guardian          — the SUT (instrumented)
+#   session-registry  — anvil, the on-chain eth_call dependency
+#   workload          — client/driver: waits, emits setup_complete, then idles
+#
+# Services reach each other by service name over the compose network
+# (guardian, session-registry). hostname == container_name is set for Antithesis
+# log attribution; both use hyphens (underscores are invalid DNS labels).
+
+services:
+  guardian:
+    container_name: validator-guardian-guardian
+    hostname: validator-guardian-guardian
+    platform: linux/amd64
+    init: true
+    build:
+      context: ../..
+      dockerfile: antithesis/Dockerfile
+      target: guardian
+    image: validator-guardian-guardian:latest
+    environment:
+      NO_COLOR: "1"
+      RUST_LOG: "info"
+      GUARDIAN_PORT: "9001"
+      GENESIS_FORK_VERSION: "00000000"
+      # The guardian only dials these on verify-session custody / keygen paths,
+      # which the idle setup harness does not exercise. Present to document intent;
+      # SESSION_REGISTRY_ADDRESS + the mock CVM agent are added by antithesis-workload.
+      CVM_AGENT_SOCKET_PATH: "/app/cvm-agent.sock"
+      SESSION_REGISTRY_RPC_URL: "http://session-registry:8545"
+    volumes:
+      - guardian-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9001/upcheck"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  session-registry:
+    container_name: validator-guardian-session-registry
+    hostname: validator-guardian-session-registry
+    platform: linux/amd64
+    init: true
+    build:
+      context: ../..
+      dockerfile: antithesis/Dockerfile
+      target: session-registry
+    image: validator-guardian-session-registry:latest
+    environment:
+      NO_COLOR: "1"
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  workload:
+    container_name: validator-guardian-workload
+    hostname: validator-guardian-workload
+    platform: linux/amd64
+    init: true
+    build:
+      context: ../..
+      dockerfile: antithesis/Dockerfile
+      target: workload
+    image: validator-guardian-workload:latest
+    environment:
+      NO_COLOR: "1"
+      GUARDIAN_URL: "http://guardian:9001/upcheck"
+      GUARDIAN_BASE_URL: "http://guardian:9001"
+      SESSION_REGISTRY_RPC_URL: "http://session-registry:8545"
+    depends_on:
+      guardian:
+        condition: service_healthy
+      session-registry:
+        condition: service_healthy
+
+volumes:
+  guardian-data:

@@ -5,6 +5,10 @@ use puffersecuresigner::{eth2::eth_types::Version, strip_0x_prefix};
 async fn main() {
     tracing_subscriber::fmt::init();
 
+    // Initialize the Antithesis SDK as early as possible so assertion cataloging
+    // and lifecycle signals work. No-op outside the Antithesis environment.
+    antithesis_sdk::antithesis_init();
+
     // Port: env var > CLI arg > default 3031
     let port = std::env::var("GUARDIAN_PORT")
         .ok()
@@ -31,6 +35,14 @@ async fn main() {
     let app_state = puffersecuresigner::enclave::shared::handlers::AppState {
         genesis_fork_version,
     };
+
+    // Antithesis bootstrap property: proves the SDK is linked, cataloging works,
+    // and this guaranteed-to-run startup path executes on every run. Keep the
+    // message a stable inline string literal so cataloging stays comparable.
+    antithesis_sdk::assert_reachable!(
+        "guardian startup path executed",
+        &serde_json::json!({ "port": port })
+    );
 
     let app = axum::Router::new()
         // Endpoint to check health

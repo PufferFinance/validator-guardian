@@ -1,0 +1,25 @@
+# Antithesis coverage instrumentation config for the guardian (SUT) build ONLY.
+# Copied to /app/.cargo/config.toml in the guardian-builder stage of
+# antithesis/Dockerfile. Do not place this at the repo root — it must not affect
+# normal `cargo build`.
+#
+# Setting build.target (even to the host triple) keeps proc-macros and build
+# scripts out of instrumentation. These rustflags MUST be paired with the
+# `antithesis_instr` Cargo feature (which pulls in antithesis-instrumentation);
+# doing one without the other produces an invalid binary.
+#
+#   -Cpasses=sancov-module / -sanitizer-coverage-*  : LLVM coverage for Antithesis
+#   -Clink-args=-Wl,--build-id                       : required for symbolization
+#   -Cdebuginfo=1                                    : DWARF symbols for /symbols
+[build]
+target = "x86_64-unknown-linux-gnu"
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = [
+    "-Ccodegen-units=1",
+    "-Cpasses=sancov-module",
+    "-Cllvm-args=-sanitizer-coverage-level=3",
+    "-Cllvm-args=-sanitizer-coverage-trace-pc-guard",
+    "-Cdebuginfo=1",
+    "-Clink-args=-Wl,--build-id",
+]
