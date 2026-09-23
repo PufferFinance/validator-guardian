@@ -49,9 +49,8 @@ pub async fn attest_new_eth_key_with_blockhash(
         ethers::abi::Token::Bytes(pk.serialize().to_vec()),
     ]);
 
-    // Commit to the payload — CVM agent signs keccak256(payload),
-    // which matches the signedMessageHash the contract passes to
-    // SessionRegistry.verifySessionSignature()
+    // The portal signs keccak256("ATAKIT_SESSION_SIGN_V1" || payload).
+    // GuardianModule must apply that same domain before registry verification.
     let proof = crate::io::remote_attestation::AttestationEvidence::new(&payload).await?;
     Ok((proof, pk))
 }
@@ -147,8 +146,7 @@ pub async fn verify_session_evidence(
             .collect::<std::result::Result<Vec<_>, _>>()?,
     )?;
 
-    // The CVM agent signs keccak256(payload) — see atakit sim/state.rs
-    let message = alloy::primitives::keccak256(&payload);
+    let message = atakit_portal_client::signing_digest(&payload, atakit_portal_client::HashFunction::Keccak256);
 
     // 3. Parse session evidence fields
     let session_id_hex: String = crate::strip_0x_prefix!(&keygen_payload.session_id);
@@ -164,8 +162,7 @@ pub async fn verify_session_evidence(
     let signature: AlloyBytes = hex::decode(&sig_hex)?.into();
 
     // 4. Read env config
-    let rpc_url = std::env::var("SESSION_REGISTRY_RPC_URL")
-        .map_err(|_| anyhow!("SESSION_REGISTRY_RPC_URL env var is required for session verification"))?;
+    let rpc_url = crate::io::runtime::session_registry_rpc_url()?;
     let registry_address: Address = std::env::var("SESSION_REGISTRY_ADDRESS")
         .map_err(|_| anyhow!("SESSION_REGISTRY_ADDRESS env var is required for session verification"))?
         .parse()
@@ -222,7 +219,7 @@ fn parse_session_public_key(
 ) -> Result<crate::io::session_registry::ISessionRegistry::PublicIdentity> {
     // Try JSON: {"typeId":3,"key":"0x04..."}
     if let Ok(identity) =
-        serde_json::from_str::<automata_cvm_agent::PublicIdentity>(session_public_key)
+        serde_json::from_str::<atakit_portal_client::PublicIdentity>(session_public_key)
     {
         return Ok(crate::io::session_registry::ISessionRegistry::PublicIdentity {
             typeId: identity.type_id,

@@ -1,0 +1,30 @@
+{
+  "evidence_bundle": {
+    "binding": {
+      "chain_id": 560048,
+      "mode": "chain",
+      "owner_nonce": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "qualifying_data": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "registry": "0x1111111111111111111111111111111111111111"
+    },
+    "format": 2,
+    "owner": {
+      "contract_authorization": {
+        "op_expires_at": 2000000000,
+        "payload": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "signature": "0xe7c93726a865578504442b1a6827f676e0ed74bdff2be3960d1e253bbcfc44626aa772b878bc912bdbb33a0014ec507c4b3896ea85aa914b74dee9b7ac3e56da1c"
+      },
+      "fingerprint": "0x919e40eaae8e911f840b085d8aef37226ccd9b6351e8c4a7baaa5e44c611bb92"
+    },
+    "session_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "session_key": {
+      "bytes": "0x04c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee51ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a",
+      "fingerprint": "0xb98e1e222b139d7627b4112dad201fd4b40403ed03400611afb2f84769bb3205",
+      "type_id": 3
+    }
+  },
+  "request_binding": {
+    "challenge": "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI",
+    "signature": "0xd693cdf9f4b0a6539a35f15880ca7ff1e3cf7954289e11f7ce7a5397691b09707fdeb754c06fcd6fb5223525405f6b47389f626267a6d2ef777c11e5f0ce70a51c"
+  }
+}

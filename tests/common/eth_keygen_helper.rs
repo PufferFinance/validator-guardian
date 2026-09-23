@@ -88,6 +88,6 @@ async fn test_eth_key_in_attestation_evidence() {
         // Verify session evidence fields are present
         assert!(!resp.evidence.session_id.is_empty());
         assert!(!resp.evidence.signature.is_empty());
-        assert!(!resp.evidence.session_public_key.is_empty());
+        assert!(!resp.evidence.session_public_key.key.is_empty());
     }
 }
