@@ -1,46 +1,850 @@
-# Secure Signer Local Setup
+# Developer onboarding: local emulation and Hoodi deployment
 
-1. Start anvil: `anvil --fork-url https://rpc.hoodi.ethpandaops.io`
-2. Use `atakit registry ls` to get list of mock smart contracts. Use the `SessionRegistryMock` address when deploying puffer-contracts.
-3. Deploy Puffer contracts. Clone puffer-contracts repo and run `yarn install` in root and run `forge install` in mainnet-contracts/.
+This guide assumes familiarity with Rust, containers, and Ethereum development.
+It explains how Validator Guardian uses atakit: publishing workload identities,
+authorizing sessions, emulating Portal locally, and deploying to a GCP CVM.
+Commands use Bash on macOS or Linux.
 
-   ```sh
-   export DEV_WALLET=your-wallet-from-anvil
-   export SESSION_REGISTRY=0xD1860020870ffEd23a644d0CD4CA9E7b3Ff53D6c
-   export FRESHNESS_BLOCKS=10
-   export DEV_WALLET_PK=your-pk-from-anvil
-   export PK=$DEV_WALLET_PK
+Follow sections 1–6 for local development. The demo contract deployment, allowlist
+setup, and contract signature check are optional; application keygen/custody tests
+do not require them. Sections 7–9 cover public Hoodi and
+GCP deployment. The [GuardianModule appendix](#allow-a-guardian-workload-in-guardianmodule)
+is optional and requires an existing compatible Puffer contract deployment.
 
-   forge script script/DeployEverything.s.sol:DeployEverything \
-     --private-key ${DEV_WALLET_PK} \
-     --rpc-url http://127.0.0.1:8545 \
-     --sig 'run(address, address[] calldata, uint256, address, uint256)' $SESSION_REGISTRY "[$DEV_WALLET]" 1 $DEV_WALLET $FRESHNESS_BLOCKS
-   ```
+The examples use Hoodi, not Ethereum mainnet. A local fork has Hoodi's chain ID
+but is still a different chain: always check the **RPC URL**, not only the chain ID.
 
-   Once deployment is done, scroll to the top to see all the deployed addresses. `GuardianModule` address is needed to call `GuardianModule.setAllowedWorkload`.
+## Contents
 
-4. Start sim-agent: `atakit sim-agent --rpc-url http://localhost:8545`
-5. Copy the workload id from sim-agent logs.
+1. [Install tools and repositories](#1-install-the-tools-and-download-the-repositories)
+2. [Create and configure keys](#2-create-and-configure-keys)
+3. [Start Anvil A](#3-start-the-development-chain-anvil-a)
+4. [Deploy a local verification contract (optional)](#4-deploy-a-small-verification-contract-to-anvil-a-optional)
+5. [Start Emulator](#5-start-emulator-anvil-b)
+6. [Run, debug, and verify](#6-run-and-debug-the-applications)
+7. [Publish a workload on Hoodi](#7-publish-the-workload-on-public-hoodi)
+8. [Deploy the contract on Hoodi (optional)](#8-deploy-the-contract-to-public-hoodi-with-a-cast-wallet-optional)
+9. [Deploy a GCP CVM](#9-deploy-the-workload-to-a-gcp-confidential-vm)
+10. [Stop and troubleshoot](#10-stop-resume-and-troubleshoot)
 
-   ```text
-   Workload: secure-signer:dev-20260302 (workload_id: 0xf038944cba05970c3ae785a127795a4e29271417663caa17464cb31d42a5b2f9)
-   Workload: validator:dev-20260302 (workload_id: 0xd230a02fc0e67da1d6f4633fa2ff403a04669ec37b0fe9f522b043ec5ab6fcbf)
-   Workload: guardian:dev-20260302 (workload_id: 0x2b16a66adfbf002b4367d9d831d02129976af0c5396dc742cd0d6053198d3bb2)
-   ```
+Optional: [Configure a GuardianModule allowlist](#allow-a-guardian-workload-in-guardianmodule).
 
-6. Call `GuardianModule.setAllowedWorkload`.
+## 1. Install the tools and download the repositories
 
-   ```sh
-   cast send 0x457cCf29090fe5A24c19c1bc95F492168C0EaFdb \
-     "setAllowedWorkload(bytes32,bool)" \
-     <YOUR_WORKLOAD_ID> \
-     true \
-     --rpc-url http://localhost:8545 \
-     --private-key $DEV_WALLET_PK
-   ```
+Prerequisites: Rust 1.91+, Git, Bash, jq, just, and Foundry (`forge`, `cast`,
+`anvil`). Linux builds also need a C toolchain, pkg-config, and OpenSSL headers.
+Install [Rust](https://www.rust-lang.org/tools/install) and
+[Foundry](https://getfoundry.sh/introduction/installation/) if needed. Docker or
+Podman is required for container builds, but not native emulation.
 
-7. Now confirm if workload is allowed.
+Use the [`v0.3.1-preview` branch of automata-network/atakit](https://github.com/automata-network/atakit/tree/v0.3.1-preview).
+Use a short workspace path to avoid Unix socket length limits:
 
-   ```sh
-   cast call 0x457cCf29090fe5A24c19c1bc95F492168C0EaFdb "isWorkloadAllowed(bytes32)" 0x2b16a66adfbf002b4367d9d831d02129976af0c5396dc742cd0d6053198d3bb2 --rpc-url http://localhost:8545
-   ```
+```bash
+mkdir -p "$HOME/dev"
+cd "$HOME/dev"
+git clone --branch v0.3.1-preview --single-branch https://github.com/automata-network/atakit.git atakit
+git clone https://github.com/PufferFinance/validator-guardian.git
+```
+
+Keep atakit on `v0.3.1-preview` when following this guide. This guide requires atakit's
+Emulator commands, including `workload-compose --platform`, and the application's
+vendored Portal client. These changes must be present in your selected checkout;
+ask the maintainers for a compatible revision if the installed CLI lacks them.
+
+The workload configurations here use **manifest format 8** and
+**automata-linux:v0.3.1-debug**. Use an atakit builder that produces format 8:
+changing `format` in the TOML does not downgrade the builder's output. Check the
+built artifact with `atakit workload info` before cloud deployment.
+
+Build/install from the selected atakit checkout:
+
+```bash
+cd "$HOME/dev/atakit"
+cargo install --locked --path crates/atakit-cli --force
+atakit --version
+cd "$HOME/dev/validator-guardian"
+cargo check --locked --lib --bin guardian --bin validator
+```
+
+Use the installed `atakit` consistently for both direct commands and `just`.
+Run the remaining commands from the **validator-guardian repository root**.
+
+The configuration files serve different purposes:
+
+| File | Responsibility |
+| --- | --- |
+| `~/.config/atakit/config.toml` | Operator keys, chains, image repositories, cloud targets |
+| `container/<service>/atakit-workload.toml` | Publishable workload identity, image build, environment, storage policy |
+| `atakit-emulator.toml` | Local workload selection, upstream Anvil URL, runtime paths |
+
+Emulator and production builds share the workload TOMLs. Changing local process
+settings is different from changing the publishable workload definition.
+
+## 2. Create and configure keys
+
+These are different roles:
+
+| Key | Purpose |
+| --- | --- |
+| Publisher (`publisher`) | Signs workload publication; its fingerprint contributes to the workload ID |
+| Session owner (`session_owner`) | Authorizes sessions for a deployment; checked by business owner/membership rules |
+| Gas/relay wallet | Pays registry and session registration transaction fees |
+| Contract deployer | Sends your business-contract deployment transactions |
+| Session key | Generated by Portal or Emulator; not a key you create here |
+
+This tutorial uses separate `publisher`, `session_owner`, and `gas` test keys.
+Generate them once, or use existing test keys in the format below:
+
+```bash
+atakit_config_dir="${ATAKIT_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/atakit}"
+mkdir -p "$atakit_config_dir"
+chmod 700 "$atakit_config_dir"
+(
+  set -euo pipefail
+  umask 077
+  for name in publisher session_owner gas; do
+    test ! -e "$atakit_config_dir/$name.key" || {
+      echo "$name.key already exists; keep it or choose a new key name" >&2
+      exit 1
+    }
+    wallet=$(cast wallet new --json)
+    printf '%s' "$wallet" | jq -er '.[0].private_key' > "$atakit_config_dir/$name.key"
+    printf '%s' "$wallet" | jq -er '.[0].address' > "$atakit_config_dir/$name.address"
+    unset wallet
+  done
+)
+cat "$atakit_config_dir/gas.address"
+```
+
+### Key files and their contents
+
+The default directory is `~/.config/atakit`; `ATAKIT_CONFIG_DIR` overrides it,
+otherwise `XDG_CONFIG_HOME` changes its parent. The tutorial uses:
+
+| File | Role |
+| --- | --- |
+| `~/.config/atakit/publisher.key` | Workload publication |
+| `~/.config/atakit/session_owner.key` | Session authorization |
+| `~/.config/atakit/gas.key` | Transaction funding |
+
+Each `.key` is a plain-text secp256k1 private key: `0x` plus 64 hexadecimal
+characters, with an optional trailing newline. Use raw hex, not an encrypted
+Foundry keystore or JSON. Existing keys can be placed at these paths with mode
+`0600`; keep them outside the repository. The generation script also writes
+optional `.address` files; atakit reads only the configured `.key` files.
+
+Fund `gas.address` with Hoodi ETH before publishing or cloud deployment. Emulator
+funds accounts only on its local fork. The contract deployer uses a separate
+Foundry keystore in section 8.
+
+### Configure atakit
+
+Merge the following into `$atakit_config_dir/config.toml`. The key paths match
+the default locations above; atakit expands `~/` to your home directory. Adjust
+them if you use a custom directory. Set your GCP project before cloud deployment;
+emulator uses the target's machine profile locally without contacting GCP.
+
+```toml
+[image.repositories]
+automata = { repo = "automata-network/automata-linux" }
+
+[chains.hoodi]
+rpc_url = "https://ethereum-hoodi-rpc.publicnode.com"
+chain_id = 560048
+session_registry = "0x7575BceC155b272077C87aD3Ae5Ef54Cf9DC6601"
+workload_registry = "0x3a2E3D05cAAb7261e97F27ceDdffFbC9eEEe6b0D"
+base_image_registry = "0x6b837e4Cc2A7BDaA1d938CEE7fa0b82458dA0b14"
+
+[keys.publisher]
+type = "es256k"
+mode = "provisioned"
+file = "~/.config/atakit/publisher.key"
+
+[keys.session_owner]
+type = "es256k"
+mode = "provisioned"
+file = "~/.config/atakit/session_owner.key"
+
+[keys.gas]
+type = "es256k"
+mode = "provisioned"
+file = "~/.config/atakit/gas.key"
+
+[publish]
+chain = "hoodi"
+owner_key = "publisher"
+relay_key = "gas"
+
+[cloud.providers.gcp]
+platform = "gcp"
+project = "YOUR_GCP_PROJECT_ID"
+region = "asia-southeast1-b"
+
+[cloud.defaults]
+chain = "hoodi"
+registration = "required"
+owner_key = "session_owner"
+gas_wallet = "gas"
+image = "automata-linux:v0.3.1-debug"
+
+[cloud.targets.gcp-c3-standard-4]
+provider = "gcp"
+vmtype = "c3-standard-4"
+```
+
+The key configuration maps to these roles:
+
+| Identity | Configuration | Tutorial key |
+| --- | --- | --- |
+| Workload publisher | `[publish].owner_key` | `publisher` |
+| Session owner | `[cloud.defaults].owner_key` | `session_owner` |
+| Gas wallet | `[publish].relay_key` / `[cloud.defaults].gas_wallet` | `gas` |
+
+Emulator uses the publisher configuration. Its session owner comes from an
+explicit CLI/emulator setting, then the selected target, then cloud defaults;
+if none is configured, startup fails. It does not fall back to the publisher.
+
+These registry addresses are the ones selected by this project, not a promise of
+future deployment availability. Confirm them with your environment administrator.
+Inspect your configuration and public identity:
+
+```bash
+atakit keys ls
+atakit keys show publisher
+atakit keys show session_owner
+atakit keys show gas
+atakit emulator status
+atakit image pull automata-linux:v0.3.1-debug gcp
+atakit image inspect automata-linux:v0.3.1-debug --json
+```
+
+`keys show` reports the public key and **fingerprint**, never the private key.
+A fingerprint is not an Ethereum address. The base-image publisher in the workload
+TOMLs identifies the image publisher, not your workload publisher or session owner. Check that the downloaded
+image identity matches the reference already in the TOMLs.
+
+## 3. Start the development chain (Anvil A)
+
+In terminal 1, from the repository root:
+
+```bash
+just dev-anvil
+```
+
+Leave it running. It forks the configured Hoodi RPC onto `http://127.0.0.1:8545`
+and saves state to `.atakit-emulator/hoodi-anvil.json`. Stop with Ctrl-C and reuse
+the same command to reload saved state. Use an upstream RPC that retains historical
+state if you want to resume an old fork.
+
+The local topology is:
+
+```text
+Hoodi RPC
+   |
+   +-- Anvil A :8545  (you own it; contract deployments and saved state)
+          |
+          +-- Anvil B :8546  (Emulator fork; mock hardware verification)
+                 |
+                 +-- real registry logic + local workload/session registrations
+                 +-- per-workload Portal sockets --> native apps / Compose
+```
+
+Neither Anvil publishes its changes back to Hoodi. Emulator does not deploy your
+business contracts or start your application processes.
+
+## 4. Deploy a small verification contract to Anvil A (optional)
+
+Skip this section if you only need application API testing.
+
+This standalone example demonstrates Portal signature verification with the
+current SessionRegistry ABI and a workload ID allowlist managed by the deployer.
+Verification reads the workload ID from the registered session, not from caller
+input. The allowlist starts empty; section 5 obtains the Guardian workload ID and
+authorizes it before verification. Production contracts also need their own
+session-owner policy and replay protection. This example is not GuardianModule.
+
+Full Puffer deployment is a separate workflow requiring contracts and deployment
+scripts that support the current SessionRegistry. The optional
+[GuardianModule appendix](#allow-a-guardian-workload-in-guardianmodule) explains
+allowlist configuration for an existing compatible deployment.
+
+In terminal 2, create an isolated Foundry project under the ignored runtime folder:
+
+```bash
+mkdir -p .atakit-emulator/contracts/src
+cat > .atakit-emulator/contracts/foundry.toml <<'TOML'
+[profile.default]
+src = "src"
+out = "out"
+solc = "0.8.30"
+evm_version = "prague"
+TOML
+cat > .atakit-emulator/contracts/src/SessionSignatureDemo.sol <<'SOL'
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.30;
+
+interface ISessionRegistry {
+    struct PublicIdentity { uint8 typeId; bytes key; }
+    struct CVMSession {
+        bytes32 akPubKeyFingerprint;
+        bytes32 tpmSigningKeyFingerprint;
+        bytes32 sessionKeyFingerprint;
+        bytes32 baseImageId;
+        bytes32 workloadId;
+        bytes32 platformProfileId;
+        bytes32 measurementVariantId;
+        uint64 registeredAt;
+        uint64 sessionExpiresAt;
+    }
+    function getSession(bytes32 sessionId) external view returns (CVMSession memory);
+    function verifySessionSignature(
+        bytes32 sessionId, PublicIdentity calldata key,
+        bytes32 digest, bytes calldata signature
+    ) external view returns (bool);
+}
+
+contract SessionSignatureDemo {
+    ISessionRegistry public immutable REGISTRY;
+    address public immutable ADMIN;
+    mapping(bytes32 => bool) private allowedWorkloads;
+
+    constructor(address registryAddress) {
+        require(registryAddress.code.length > 0, "missing registry");
+        REGISTRY = ISessionRegistry(registryAddress);
+        ADMIN = msg.sender;
+    }
+    function setAllowedWorkload(bytes32 workloadId, bool allowed) external {
+        require(msg.sender == ADMIN, "not admin");
+        allowedWorkloads[workloadId] = allowed;
+    }
+    function isWorkloadAllowed(bytes32 workloadId) external view returns (bool) {
+        return allowedWorkloads[workloadId];
+    }
+    function verify(
+        bytes32 sessionId, ISessionRegistry.PublicIdentity calldata key,
+        bytes calldata message, bytes calldata signature
+    ) external view returns (bool) {
+        require(allowedWorkloads[REGISTRY.getSession(sessionId).workloadId], "workload not allowed");
+        bytes32 digest = keccak256(abi.encodePacked("ATAKIT_SESSION_SIGN_V1", message));
+        return REGISTRY.verifySessionSignature(sessionId, key, digest, signature);
+    }
+}
+SOL
+
+export DEV_RPC=http://127.0.0.1:8545
+export SESSION_REGISTRY=0x7575BceC155b272077C87aD3Ae5Ef54Cf9DC6601
+export DEV_SENDER=$(cast rpc --rpc-url "$DEV_RPC" eth_accounts | jq -er '.[0]')
+forge build --root .atakit-emulator/contracts
+forge create --root .atakit-emulator/contracts \
+  src/SessionSignatureDemo.sol:SessionSignatureDemo \
+  --rpc-url "$DEV_RPC" --unlocked --from "$DEV_SENDER" --broadcast \
+  --constructor-args "$SESSION_REGISTRY"
+```
+
+Copy the printed `Deployed to` address:
+
+```bash
+export DEMO_ADDRESS=0x_REPLACE_WITH_DEPLOYED_ADDRESS
+cast code "$DEMO_ADDRESS" --rpc-url "$DEV_RPC"
+```
+
+The code should be nonempty. `--unlocked` uses a funded local Anvil account; it is
+not how you sign public Hoodi transactions.
+
+## 5. Start Emulator (Anvil B)
+
+Start Emulator after Anvil A is running. If you chose the optional contract demo,
+deploy it on A first so B inherits it:
+
+```bash
+just emulator-up
+just emulator-status
+```
+
+To explicitly select a machine profile and session owner, use this instead:
+
+```bash
+just emulator-up --target gcp-c3-standard-4 --owner-key session_owner
+```
+
+`--target` selects a configured cloud target's machine profile; it does not create
+a cloud VM. `--owner-key` selects the session-owner key alias.
+
+Both flags can be omitted with the tutorial configuration: atakit selects the
+only compatible target (`gcp-c3-standard-4`) and uses the configured session owner
+(`session_owner`). Multiple compatible targets require `--target`; no compatible
+target or no configured session owner is an error. The owner never falls back to
+the publisher.
+
+`up` reads the root `atakit-emulator.toml`, which selects the three
+`container/<service>/atakit-workload.toml` files. Resource paths use the repository
+root; there is no separate local workload definition.
+
+Expect environment `state: ready`, and a nonempty `workload_id`, `session_id`, and
+`portal_socket` for each workload. Emulator registers workloads/sessions only on
+B; this is not public workload publication. TPM encryption declarations are kept
+in the TOMLs but local disks are plain directories.
+
+The emulator currently requires a local TOML with a nonempty `workload.image.build`.
+The three configurations in this repository meet that requirement. A registry-only
+main image or an `.atawl` downloaded by `atakit workload pull` cannot yet be used
+directly as emulator input. Registry images for dependency services are allowed.
+
+### Workload identity and business allowlists
+
+The workload ID comes from the publisher fingerprint (`[publish].owner_key`),
+TOML workload name, and version. Changing any of these changes the ID. Read your
+own IDs after startup instead of copying another developer's values:
+
+```bash
+just emulator-status | jq -er '.workloads.guardian.workload_id'
+just emulator-status | jq -er '.workloads.validator.workload_id'
+```
+
+| Check | Workload ID to use |
+| --- | --- |
+| Guardian validates Validator custody | Validator |
+| GuardianModule authorizes Guardian proofs | Guardian |
+
+Changing only the session-owner key does **not** change the workload ID. It changes
+the session owner that business authorization must accept; recreate the emulator
+after changing its owner configuration.
+
+The emulator registers a missing workload on B before registering its session.
+It reuses an existing ID if registered metadata is compatible; conflicting
+metadata requires a new version. Business-contract allowlists remain enforced.
+For GuardianModule, follow the optional [allowlist setup](#allow-a-guardian-workload-in-guardianmodule)
+after startup. Configure the demo contract's allowlist using the steps below.
+
+Emulator simulates hardware evidence and can satisfy an existing workload's PCR
+policy after local code edits. It does not prove that the running code matches a
+published image. Use it to test application behavior and authorization rules;
+validate production attestation with a real CVM. Any local adjustment to the
+Registry's publisher whitelist is separate from a business workload allowlist.
+
+### Authorize the demo's Guardian workload (optional)
+
+Only needed if you deployed the demo contract in section 4.
+
+Use `.workloads.guardian.workload_id` from emulator status, not the session ID or
+publisher fingerprint. In terminal 2, where `DEMO_ADDRESS` and `DEV_SENDER` were
+set during deployment:
+
+```bash
+export GUARDIAN_WORKLOAD_ID=$(just emulator-status | jq -er '.workloads.guardian.workload_id')
+cast send "$DEMO_ADDRESS" 'setAllowedWorkload(bytes32,bool)' \
+  "$GUARDIAN_WORKLOAD_ID" true \
+  --rpc-url "$DEV_RPC" --unlocked --from "$DEV_SENDER"
+
+# Copy A's new allowlist state into B, then verify it there.
+atakit emulator refresh
+export EMULATOR_RPC=$(just emulator-status | jq -er '.rpc_url')
+cast call "$DEMO_ADDRESS" 'isWorkloadAllowed(bytes32)(bool)' \
+  "$GUARDIAN_WORKLOAD_ID" --rpc-url "$EMULATOR_RPC"
+```
+
+Expected: `true`. The deployer is this demo's admin. Setting the allowlist on A
+retains it in your saved development chain; refresh recreates B's sessions, so
+obtain signatures only after this step. Registration of the workload itself may
+exist only on B: storing its ID in the demo's allowlist on A does not require
+registering it on A.
+
+If the publisher, name, or version changes, obtain the new workload ID and repeat
+this step. Remove obsolete entries with `setAllowedWorkload(oldId, false)`.
+
+### Keep the fork in sync
+
+After deploying a contract or updating its configuration on Anvil A:
+
+```bash
+atakit emulator refresh
+just emulator-status
+```
+
+Refresh reforks A and creates fresh sessions. Capture new session IDs and signatures;
+it discards contracts/transactions that existed only on B. It does not reload
+changed workload TOMLs. For TOML/measurement changes, stop apps and use `down`,
+then `up`. A conflicting already-published workload identity needs a new version.
+
+## 6. Run and debug the applications
+
+### Run Guardian and Validator together
+
+Keep Anvil A running and start the emulator once with `just emulator-up` as in
+section 5. The root `atakit-emulator.toml` already includes both workloads, so
+they share Anvil B while each receives its own Portal socket, session, and data
+directory. `emulator up` does not start either application.
+
+Run the following in two terminals from the repository root. Both binaries
+default to port 9001, so give Validator a different port:
+
+```bash
+# Terminal 3: Guardian on http://127.0.0.1:9001
+just run guardian # or: just compose guardian up --build
+```
+
+```bash
+# Terminal 4: Validator on http://127.0.0.1:9002
+VALIDATOR_PORT=9002 just run validator # or: just compose validator up --build
+```
+
+Choose either native or Compose for each service, not both on the same port.
+Compose uses the TOML port mappings, so it does not need the native
+`VALIDATOR_PORT` override. See [Compose](#compose-is-optional) for setup and current
+network limitations.
+
+`just run guardian` and `just run validator` select their corresponding emulator
+instances automatically. Do not share one workload's exported environment with
+the other or start a second emulator.
+
+External environment variables take precedence during `exec`, including empty
+values. A warning lists changed variable names without exposing their values.
+This only affects the launched process; TOML, exported `env` defaults, and registered
+measurements stay unchanged. Avoid stale `EMULATOR_ROOTFS`/`EMULATOR_RPC_URL` exports
+when switching workloads.
+
+In another terminal, check both services and read the Validator identity used
+by the custody request:
+
+```bash
+curl -fsS -o /dev/null -w 'Guardian: %{http_code}\n' http://127.0.0.1:9001/upcheck
+curl -fsS -o /dev/null -w 'Validator: %{http_code}\n' http://127.0.0.1:9002/upcheck
+export VALIDATOR_WORKLOAD_ID=$(just emulator-status | jq -er '.workloads.validator.workload_id')
+```
+
+Expected: HTTP 200. After Rust edits, stop the app with Ctrl-C and rerun it; the
+emulator can stay up. `exec` supplies `EMULATOR_ROOTFS` and `EMULATOR_RPC_URL`,
+which select the local data paths, Portal socket, and verification chain.
+VS Code/other debuggers can use the
+values from `atakit emulator env --workload guardian --format dotenv` with the
+repository root as their working directory.
+
+For the business API flow, use [the testing guide](testing.md#emulator-sessions-2026-09-23):
+1. Request Guardian ETH keygen on port 9001 and use the returned public key when
+   creating the Validator's encrypted key shares.
+2. Request Validator BLS keygen on port 9002 with `doRemoteAttestation: true`.
+3. Submit the Validator's response to Guardian custody on port 9001 with
+   `verifySession: true` and `workloadId` set to `$VALIDATOR_WORKLOAD_ID`.
+
+Both processes use Anvil B for session operations. This custody check is separate
+from the demo contract's Guardian allowlist. Stop or
+restart each application independently with Ctrl-C and its `just run` command.
+
+### Verify a Portal signature through your deployed contract (optional)
+
+This requires the optional demo deployment in section 4 and its allowlist setup
+in section 5. Skip it for application-only testing.
+
+In terminal 2 (where `DEMO_ADDRESS` is set):
+
+```bash
+export EMULATOR_RPC=$(just emulator-status | jq -er '.rpc_url')
+portal_socket=$(just emulator-status | jq -er '.workloads.guardian.portal_socket')
+curl -fsS --unix-socket "$portal_socket" \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"0x68656c6c6f","hash_fn":"keccak256"}' \
+  http://localhost/sign-message > .atakit-emulator/demo-signature.json
+proof=.atakit-emulator/demo-signature.json
+cast call "$DEMO_ADDRESS" \
+  'verify(bytes32,(uint8,bytes),bytes,bytes)(bool)' \
+  "$(jq -er '.session_id' "$proof")" \
+  "($(jq -er '.session_pubkey.type_id' "$proof"),$(jq -er '.session_pubkey.key' "$proof"))" \
+  0x68656c6c6f "$(jq -er '.signature' "$proof")" --rpc-url "$EMULATOR_RPC"
+```
+
+Expected: `true`. Changing the message to `0x68656c6c6e` should return false or
+revert. Verify against **B:8546**, because the emulated session was registered on B.
+A:8545 contains the contract but not that session. A valid signature from the
+Validator session should revert with `workload not allowed`, since only Guardian
+is authorized. To test revocation, set the Guardian ID to `false` on A, refresh B,
+and retry with a fresh Guardian signature; it should also revert. Restore `true`
+and refresh before continuing. This test calls Portal directly;
+it checks the contract/Portal integration separately from application business APIs.
+
+### Compose is optional
+
+Install [Docker](https://docs.docker.com/get-started/get-docker/) with Compose,
+or a supported Podman/Compose installation. To select the engine explicitly,
+add this to atakit's global config, `~/.config/atakit/config.toml`
+(or `$atakit_config_dir/config.toml` if you selected a custom directory in section 2):
+
+```toml
+[build]
+container_engine = "docker" # or "podman"
+```
+
+```bash
+just compose guardian up --build
+# In another terminal, remove containers when finished:
+just compose guardian down
+```
+
+`up` regenerates the per-workload Compose file. `--build` rebuilds changed source.
+Containers run in the foreground with logs in the current terminal; Ctrl-C stops them.
+
+If container behavior differs from expectations, inspect the generated Compose
+file for that workload:
+
+```bash
+cat .atakit-emulator/guardian/compose.yaml
+cat .atakit-emulator/validator/compose.yaml
+```
+
+The default path is `.atakit-emulator/<workload>/compose.yaml`. Check its
+`build`, `environment`, `ports`, `volumes`, and `platform` fields against the
+configuration you intended. Each `up` regenerates this file, so make persistent
+changes in the workload TOML or command options rather than editing the YAML.
+To build and run Linux amd64 containers locally, put `--platform` before `up`:
+
+```bash
+just compose guardian --platform linux/amd64 up --build
+# Equivalent direct command:
+atakit emulator workload-compose --workload guardian --platform linux/amd64 up --build
+```
+
+`--platform` selects the architecture for the workload and its dependency/bridge
+containers with Docker or a compatible Podman Compose provider. The engine must
+support that architecture. Omit it to use the engine default. `workload build`
+always targets `linux/amd64` for CVM deployment; both container flows use the
+same Dockerfile and compile the app in release mode.
+
+Repeat `--platform` on each `up`, since it regenerates the file. Commands such as
+`logs` and `down` reuse the saved file and do not take this option.
+
+Native socket transport is the default; if host socket mounting fails, try:
+
+```bash
+atakit emulator workload-compose --workload guardian --portal-transport bridge up --build
+```
+
+Compose injects `EMULATOR_RPC_URL` for Anvil B; Guardian prefers it over the
+production RPC in its TOML. Linux host networking uses `127.0.0.1`; other hosts
+use `host.docker.internal` with the emulator's RPC port. The container engine must
+provide connectivity to that host service. Inspect the generated YAML to confirm
+the endpoint after rebuilding atakit and rerunning `up`.
+
+**Linux limitation:** host networking cannot use the production
+Validator’s `9002:9001` remapping. Use native processes for simultaneous local
+testing on Linux until port mapping is supported. See [the workload guide](../container/README.md#compose-limitations-with-shared-configuration).
+
+## 7. Publish the workload on public Hoodi
+
+Install and start a container engine first. Use the public `chains.hoodi.rpc_url`
+in global configuration; never replace it with B's URL for this step.
+
+```bash
+mkdir -p build/workloads
+atakit workload build -f container/guardian/atakit-workload.toml -o build/workloads
+atakit workload info build/workloads/guardian-v0.2.1.atawl
+atakit workload publish build/workloads/guardian-v0.2.1.atawl \
+  --chain hoodi --relay-key gas
+```
+
+Both commands use `[publish].owner_key` (`publisher` in this guide), so
+`--signing-key` for build and `--owner-key` for publish can be omitted. If you
+override them, both must select the same publisher key.
+
+Check the artifact's actual format, publisher, base-image reference, and measurement
+before confirming publication. Replace `v0.2.1` in commands when you bump the TOML
+version. Changes to measured configuration for an existing publisher/name/version
+cannot overwrite an incompatible registered spec: choose an unused version,
+rebuild, then publish. Save the workload ID and transaction hash printed by publish.
+
+If publishing is gated, supply the administrator with the chain, WorkloadRegistry
+address and `atakit keys show publisher` fingerprint/public key. Never send a private
+key. Registry pause/whitelist restrictions are enforced on public Hoodi even when
+the local Emulator can proceed. Transaction confirmation is the publication check;
+`emulator status` describes only the local fork.
+
+Repeat build/info/publish for Validator, selecting its TOML
+and matching artifact names. `publish` registers metadata; it does not create a VM
+or distribute the application image to a running VM.
+
+## 8. Deploy the contract to public Hoodi with a cast wallet (optional)
+
+Create a separate encrypted deployer keystore (or use `cast wallet import NAME
+--interactive` for an existing wallet):
+
+```bash
+mkdir -p "$HOME/.foundry/keystores"
+cast wallet new "$HOME/.foundry/keystores" hoodi-deployer
+cast wallet address --account hoodi-deployer
+```
+
+Fund that address with Hoodi test ETH. In a new terminal set the real RPC and registry
+explicitly, then deploy the same demonstration contract. If you skipped the local
+demo, create its Foundry project and source from section 4 first; local deployment
+is not required:
+
+```bash
+export HOODI_RPC=https://ethereum-hoodi-rpc.publicnode.com
+export SESSION_REGISTRY=0x7575BceC155b272077C87aD3Ae5Ef54Cf9DC6601
+cast chain-id --rpc-url "$HOODI_RPC"
+cast code "$SESSION_REGISTRY" --rpc-url "$HOODI_RPC"
+forge create --root .atakit-emulator/contracts \
+  src/SessionSignatureDemo.sol:SessionSignatureDemo \
+  --rpc-url "$HOODI_RPC" --account hoodi-deployer --broadcast \
+  --constructor-args "$SESSION_REGISTRY"
+```
+
+Expected chain ID: 560048; registry code must be nonempty. Foundry prompts for the
+keystore password. Record the **new public** contract address; the address on your
+local Anvil is not evidence of a Hoodi deployment. Do not use `--unlocked` or an
+Anvil development private key on Hoodi. The cast keystore is separate from atakit's
+raw publisher, session-owner, and gas key sources.
+
+Set the newly deployed contract address and allow the workload ID reported by
+`atakit workload info`/`publish` for the artifact from section 7:
+
+```bash
+export HOODI_DEMO_ADDRESS=0x_REPLACE_WITH_PUBLIC_DEMO_ADDRESS
+export PUBLISHED_WORKLOAD_ID=0x_REPLACE_WITH_PUBLISHED_WORKLOAD_ID
+cast send "$HOODI_DEMO_ADDRESS" 'setAllowedWorkload(bytes32,bool)' \
+  "$PUBLISHED_WORKLOAD_ID" true --rpc-url "$HOODI_RPC" --account hoodi-deployer
+cast call "$HOODI_DEMO_ADDRESS" 'isWorkloadAllowed(bytes32)(bool)' \
+  "$PUBLISHED_WORKLOAD_ID" --rpc-url "$HOODI_RPC"
+```
+
+Local Emulator proofs cannot verify against public Hoodi. Use a real CVM session
+and a fresh signature after cloud initialization. This command deploys only the
+signature demo. Deploying Puffer contracts and configuring their governance and
+allowlists requires the matching contract project's deployment workflow.
+
+## 9. Deploy the workload to a GCP Confidential VM
+
+Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), select
+a project with billing, Compute Engine/Storage access, suitable IAM permissions,
+and quota for the configured C3 TDX machine in its zone:
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_GCP_PROJECT_ID
+atakit cloud deploy build/workloads/guardian-v0.2.1.atawl \
+  --target gcp-c3-standard-4 --chain hoodi --owner-key session_owner \
+  --image automata-linux:v0.3.1-debug --name guardian-hoodi \
+  --disk-setup guardian-data=create
+atakit cloud status guardian-hoodi --target gcp-c3-standard-4 --live
+```
+
+Review the deployment plan before confirming. `create` authorizes formatting only
+an empty data disk; it is needed even for a newly created disk. Do not replace it
+with `overwrite` to fix a disk holding keys or slashing history. Cloud disks retain
+the production TPM encryption policy that local Emulator ignores.
+
+Expected: initialization succeeds, Portal reaches Running, and chain registration
+succeeds. `cloud status --live` is an operational status check, not cryptographic
+attestation verification. Use `atakit cloud verify-session --help` for a separate
+verification against your expected workload and chain. A VM merely existing is not enough. Use the reported VM IP for
+`http://VM_IP:9001/upcheck` (through your intended firewall/access path), then run
+the business API tests using the public RPC and real session/workload IDs.
+Guardian uses public Hoodi in its measured configuration. The public demo contract
+is not an application setting; test it separately with the real session proof.
+
+If initialization fails, inspect status before repeating deployment:
+
+```bash
+atakit cloud status guardian-hoodi --target gcp-c3-standard-4 --live
+atakit cloud init --help
+```
+
+For an initialization retry, use `cloud init` with the original archive and
+appropriate disk authorizations after checking the current Portal state.
+
+For Validator, substitute its artifact, instance name, and `validator-data` disk.
+Its exposed host port is 9002.
+Save public deployment addresses and transaction hashes outside local disposable
+runtime state. Never copy emulator mock registrations to a public chain.
+
+## 10. Stop, resume, and troubleshoot
+
+Stop native apps with Ctrl-C. Stop Compose before removing generated files:
+
+```bash
+just compose guardian down
+just emulator-stop       # Retains checkpoint; up resumes it.
+# Or:
+just emulator-down       # Discards B/session state; retains application data.
+```
+
+Stop Anvil A separately with Ctrl-C. `emulator down` retains
+`.atakit-emulator/hoodi-anvil.json` and the tutorial contract directory. Add
+`--purge-data` only when intentionally deleting local application keys/data.
+
+Cloud deletion is separate and destructive. Review its disk deletion plan:
+
+```bash
+atakit cloud destroy gcp-c3-standard-4/guardian-hoodi
+```
+
+| Symptom | Action |
+| --- | --- |
+| `web3_clientVersion: RPC connection failed` | Start `just dev-anvil`; confirm the configured upstream is reachable. |
+| No workloads selected | Run from the repository root and check `atakit-emulator.toml`. |
+| Missing Dockerfile / measured data | Run `up` from the repository root; resource paths use that directory. |
+| `checkpoint ... changed` | Stop apps, down/up for changed inputs; use a new version for registered metadata conflicts. |
+| `format 9 ... supported (8)` | Rebuild with the matching format-8 toolchain, or upgrade the actual VM base image. |
+| Signature/session invalid | Check A vs B vs public RPC, session freshness, message bytes, and registry address. |
+| Socket path exceeds OS limit | Use a shorter checkout or runtime path. |
+| Docker archive exporter unsupported | Allow atakit to select/create a compatible builder; it must support linux/amd64. |
+| Disk preparation requires authorization | Inspect the disk; use `NAME=create` only for an empty disk. |
+
+For recorded test results and coverage, see [the testing guide](testing.md#emulator-sessions-2026-09-23).
+Public deployment requires your credentials, permissions, and available cloud
+resources; local verification does not exercise those steps.
+
+## Appendix: GuardianModule authorization
+
+### Allow a Guardian workload in GuardianModule
+
+If you are testing the migrated Puffer GuardianModule, use
+`setAllowedWorkload(bytes32 workloadId, bool allowed)`.
+Read the result with `isWorkloadAllowed(bytes32)`. The demo uses the same method
+names but only a deployer-admin check; GuardianModule uses DAO access control. Use a compatible
+GuardianModule already deployed on Anvil A, or inherited by A from its upstream.
+Use the module's proxy address when the deployment is proxied.
+
+The setter is `restricted` to the configured DAO authority. Your publisher key
+and Anvil's first account do not automatically have this permission. For the
+local fork, identify an account authorized to call this selector without delay
+by that deployment's access manager, then impersonate it on **Anvil A only**:
+
+```bash
+# Run from the repository root after completing section 5.
+export DEV_RPC=http://127.0.0.1:8545
+export GUARDIAN_MODULE=0x_REPLACE_WITH_GUARDIAN_MODULE_ADDRESS
+export MODULE_ADMIN=0x_REPLACE_WITH_AUTHORIZED_DAO_CALLER
+export GUARDIAN_WORKLOAD_ID=$(just emulator-status | jq -er '.workloads.guardian.workload_id')
+
+cast code "$GUARDIAN_MODULE" --rpc-url "$DEV_RPC"
+cast call "$GUARDIAN_MODULE" 'isWorkloadAllowed(bytes32)(bool)' \
+  "$GUARDIAN_WORKLOAD_ID" --rpc-url "$DEV_RPC"
+
+# Local Anvil impersonation does not grant contract permissions.
+cast rpc --rpc-url "$DEV_RPC" anvil_impersonateAccount "$MODULE_ADMIN"
+cast rpc --rpc-url "$DEV_RPC" anvil_setBalance "$MODULE_ADMIN" 0x8ac7230489e80000
+cast send "$GUARDIAN_MODULE" 'setAllowedWorkload(bytes32,bool)' \
+  "$GUARDIAN_WORKLOAD_ID" true \
+  --rpc-url "$DEV_RPC" --unlocked --from "$MODULE_ADMIN"
+cast rpc --rpc-url "$DEV_RPC" anvil_stopImpersonatingAccount "$MODULE_ADMIN"
+
+# B must refork A to see the updated allowlist.
+atakit emulator refresh
+export EMULATOR_RPC=$(just emulator-status | jq -er '.rpc_url')
+cast call "$GUARDIAN_MODULE" 'isWorkloadAllowed(bytes32)(bool)' \
+  "$GUARDIAN_WORKLOAD_ID" --rpc-url "$EMULATOR_RPC"
+```
+
+The final call should return `true`. Obtain fresh session IDs and signatures
+after refresh before testing Guardian proofs. To test removal, repeat the setter
+with `false` using the authorized caller, refresh, and confirm an otherwise valid
+Guardian proof is rejected. Restore `true` when that test is complete.
+
+If access control rejects the setter, check the deployment's selector permissions
+and caller. A delayed DAO operation must follow its scheduling/execution flow;
+impersonation does not bypass that requirement. Public-chain updates must use
+the actual authorized governance flow, not Anvil impersonation. Allowlisting the
+workload also does not replace Guardian membership or session-owner checks.
+GuardianModule derives the Guardian address from the session-owner public key,
+so the identity from `atakit keys show session_owner` must satisfy its membership
+rules. The publisher key does not automatically become a Guardian or a DAO admin.

@@ -176,7 +176,7 @@ Attestation verification is now done on-chain. The `session_id` in the keygen re
    - The `session_id` was registered by a genuine CVM Agent backed by a valid TDX quote
    - The `signature` over `message` was produced by the session key for that `session_id`
 
-**What `workload_id` replaces:** MRENCLAVE identified which specific enclave binary was running. The `workload_id` in `ValidateCustodyRequest` is the atakit workload hash — it identifies which Docker image + measured config was deployed. Obtain it via `atakit build-workload <name>` after building and before deploying.
+**What `workload_id` replaces:** MRENCLAVE identified which specific enclave binary was running. The `workload_id` in `ValidateCustodyRequest` is the atakit workload hash — it identifies which Docker image + measured config was deployed. Obtain it via `atakit workload info <archive.atawl>` after building and before deploying.
 
 > **Note:** The guardian's `verify_session_evidence()` currently performs structural validation only (checks that `session_id`, `attestation_signature`, and `session_public_key` are non-empty). Full on-chain verification via `SessionRegistry.verifySessionSignature()` is deferred to the caller. This is consistent with how the guardian previously left on-chain verification to callers.
 
@@ -201,11 +201,11 @@ Attestation verification is now done on-chain. The `session_id` in the keygen re
 occlum run /bin/secure-signer 9001
 ```
 
-**New (plain Docker):**
+**New (native binary or Emulator-generated Compose):**
 
 ```bash
-# Via docker compose (recommended for atakit)
-docker compose -f container/secure-signer-docker-compose.yml up
+# With Emulator running; see container/README.md for setup and limitations
+atakit emulator workload-compose --workload secure-signer up
 
 # Or directly
 ./secure-signer               # uses SECURE_SIGNER_PORT env var or defaults to 9001
@@ -258,15 +258,15 @@ In Docker, `/data` is mounted as a named volume (configured as an encrypted disk
 
 ## Deploying with atakit
 
-The project now includes `atakit.json` at the repo root, defining workloads for all three services.
+The three service configs are under `container/`. See [workload instructions](../container/README.md) for the required local atakit CLI and deferred deployment setup.
 
 ### Build a workload
 
 ```bash
-# Build one workload
-atakit build-workload secure-signer
-atakit build-workload validator
-atakit build-workload guardian
+# Run from the repository root; requires the local atakit --file extension.
+atakit workload build -d . --file container/secure-signer/atakit-workload.toml -o build/workloads
+atakit workload build -d . --file container/validator/atakit-workload.toml -o build/workloads
+atakit workload build -d . --file container/guardian/atakit-workload.toml -o build/workloads
 ```
 
 This produces a measured artifact. The hash of this artifact is your `workload_id`.
@@ -298,11 +298,8 @@ atakit divides config into two categories:
 
 ### Testing without TDX hardware
 
-Set `CVM_AGENT_STUB=true` to bypass the CVM Agent call. `AttestationEvidence::new()` returns an empty default (all fields empty strings), identical to how the old `#[cfg(not(feature = "sgx"))]` stub worked.
-
-```bash
-CVM_AGENT_STUB=true cargo test -- --test-threads 1
-```
+Use the current [local development guide](local-development.md) and Emulator.
+The historical CVM Agent examples below do not describe the current Portal integration.
 
 ### Testing with a simulated CVM Agent
 
