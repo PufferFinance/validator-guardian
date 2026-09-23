@@ -1,0 +1,17 @@
+# Start a user-owned Hoodi Anvil first (just dev-anvil).
+chain = "hoodi"
+fork-url = "http://127.0.0.1:8545"
+anvil-port = 8546
+runtime-dir = ".atakit-emulator"
+
+[[workloads]]
+name = "guardian"
+file = "container/guardian/atakit-workload.toml"
+
+[[workloads]]
+name = "validator"
+file = "container/validator/atakit-workload.toml"
+
+[[workloads]]
+name = "secure-signer"
+file = "container/secure-signer/atakit-workload.toml"
