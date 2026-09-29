@@ -1,0 +1,27 @@
+format = 8
+
+[workload]
+name = "validator"
+version = "v0.2.1"
+base-image-mode = "whitelist"
+base-image = ["0xaef8fc89416f01494ec6534de68d30aab26d7598db8a05967b0ba7d3ecb259d2/automata-linux:v0.3.1-debug"]
+image = { build = ".", containerfile = "container/Dockerfile", args = { BINARY_NAME = "validator" } }
+ports = ["9002:9001/tcp"]
+restart = "unless-stopped"
+atakit-portal = true
+
+[workload.environment]
+RUST_LOG = "info"
+VALIDATOR_PORT = "9001"
+GENESIS_FORK_VERSION = "0x10000910"
+
+[workload.storage.data]
+disk = "validator-data"
+base-path = "/"
+mount-path = "/data"
+read-only = false
+
+[disks.validator-data]
+index = 10
+size = "10GB"
+encryption = { unlock_method = ["tpm"], bind = ["platform", "baseimage", "workload"] }

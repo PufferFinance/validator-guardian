@@ -129,7 +129,7 @@ impl SlashingProtectionData {
 
     pub fn write(&self) -> Result<()> {
         let fname = hex::encode(self.pubkey.as_ssz_bytes());
-        let file_path: PathBuf = [SLASHING_PROTECTION_DIR, &fname].iter().collect();
+        let file_path: PathBuf = crate::io::runtime::storage_path(SLASHING_PROTECTION_DIR).join(&fname);
         if let Some(p) = file_path.parent() {
             fs::create_dir_all(p).with_context(|| "Failed to create slashing dir")?
         };
@@ -140,7 +140,7 @@ impl SlashingProtectionData {
 
     pub fn read(pk_hex: &str) -> Result<Self> {
         let pk_hex: String = strip_0x_prefix!(pk_hex);
-        let file_path: PathBuf = [SLASHING_PROTECTION_DIR, &pk_hex].iter().collect();
+        let file_path: PathBuf = crate::io::runtime::storage_path(SLASHING_PROTECTION_DIR).join(&pk_hex);
         let json_vec = fs::read(file_path)?;
         let json =
             serde_json::from_slice(&json_vec).with_context(|| "failed to read protection data")?;

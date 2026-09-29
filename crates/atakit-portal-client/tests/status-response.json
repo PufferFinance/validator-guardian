@@ -1,0 +1,46 @@
+{
+  "init_schema_version": 1,
+  "state": "Running",
+  "base_image_id": null,
+  "base_image_ref": null,
+  "workload_id": null,
+  "workload_ref": null,
+  "gas_wallet_address": null,
+  "started_at": "2026-09-23T00:00:00Z",
+  "detail": null,
+  "platform": {
+    "build_profile": "debug",
+    "cloud_type": "gcp",
+    "cloud_provenance": {
+      "source": "user_provided",
+      "user_provided": "gcp",
+      "detection": {
+        "dmi": {"sys_vendor": null, "product_name": null, "bios_vendor": null, "detected_cloud": "unknown"},
+        "metadata": {
+          "gcp": {"attempted": false, "matched": false, "http_status": null, "response_headers": {}, "response_body": null, "error": null},
+          "azure": {"attempted": false, "matched": false, "http_status": null, "response_headers": {}, "response_body": null, "error": null},
+          "aws": {"attempted": false, "matched": false, "http_status": null, "response_headers": {}, "response_body": null, "error": null},
+          "detected_cloud": "unknown",
+          "conflict": false
+        }
+      }
+    },
+    "attestation_mode": "tdx",
+    "tee_type": "tdx",
+    "machine_type": "c3-standard-4"
+  },
+  "chain": {
+    "registration": "required",
+    "tee_backend": "auto",
+    "status": "verified",
+    "registry_address": null,
+    "chain_id": 560048,
+    "session_id": null,
+    "tx_hash": null,
+    "block_number": null,
+    "submitted_at": null,
+    "verified_at": null,
+    "detail": null
+  },
+  "prover": null
+}

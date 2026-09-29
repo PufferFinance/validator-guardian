@@ -1,3 +1,4 @@
+use super::runtime::storage_path;
 use crate::constants::{BLS_KEYS_DIR, ETH_KEYS_DIR};
 use crate::strip_0x_prefix;
 use anyhow::{bail, Context, Result};
@@ -18,7 +19,7 @@ pub fn write_eth_key(pk_hex: &String, sk_hex: &String) -> Result<()> {
     // Sanitize inputs
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
     let sk_hex: &str = strip_0x_prefix!(sk_hex);
-    let file_path: PathBuf = [ETH_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(ETH_KEYS_DIR).join(pk_hex);
     write_key(file_path, sk_hex)
 }
 
@@ -27,21 +28,27 @@ pub fn write_bls_key(pk_hex: &String, sk_hex: &String) -> Result<()> {
     // Sanitize inputs
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
     let sk_hex: &str = strip_0x_prefix!(sk_hex);
-    let file_path: PathBuf = [BLS_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(BLS_KEYS_DIR).join(pk_hex);
     write_key(file_path, sk_hex)
 }
 
 /// Writes the BLS secret key to a keystore file
 pub fn write_bls_keystore(pk_hex: &String, sk: &[u8], password: &String) -> Result<String> {
     // Create the keys dir if it does not exist
-    fs::create_dir_all(BLS_KEYS_DIR).with_context(|| "Failed to create keys dir")?;
+    fs::create_dir_all(storage_path(BLS_KEYS_DIR)).with_context(|| "Failed to create keys dir")?;
 
     // Sanitize inputs
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
     let mut rng = rand::thread_rng();
 
     // Create encrypted keystore
-    let uuid = eth_keystore::encrypt_key(BLS_KEYS_DIR, &mut rng, sk, password, Some(pk_hex))?;
+    let uuid = eth_keystore::encrypt_key(
+        storage_path(BLS_KEYS_DIR),
+        &mut rng,
+        sk,
+        password,
+        Some(pk_hex),
+    )?;
     Ok(uuid)
 }
 
@@ -54,14 +61,14 @@ fn read_key(file_path: PathBuf) -> Result<Vec<u8>> {
 /// Reads hex-encoded ETH secret key from a file named from `pk_hex` and returns the bytes
 pub fn read_eth_key(pk_hex: &str) -> Result<Vec<u8>> {
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
-    let file_path: PathBuf = [ETH_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(ETH_KEYS_DIR).join(pk_hex);
     read_key(file_path)
 }
 
 /// Reads hex-encoded BLS secret key from a file named from `pk_hex` and returns the bytes
 pub fn read_bls_key(pk_hex: &str) -> Result<Vec<u8>> {
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
-    let file_path: PathBuf = [BLS_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(BLS_KEYS_DIR).join(pk_hex);
     read_key(file_path)
 }
 
@@ -69,7 +76,7 @@ pub fn read_bls_key(pk_hex: &str) -> Result<Vec<u8>> {
 pub fn read_bls_keystore(pk_hex: &String, password: &String) -> Result<Vec<u8>> {
     // Sanitize inputs
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
-    let file_path: PathBuf = [BLS_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(BLS_KEYS_DIR).join(pk_hex);
     let sk_bytes = eth_keystore::decrypt_key(file_path, password)?;
     Ok(sk_bytes)
 }
@@ -83,14 +90,14 @@ fn delete_key(file_path: PathBuf) -> Result<()> {
 /// Deletes the ETH secret key saved at the specified path
 pub fn delete_eth_key(pk_hex: &str) -> Result<()> {
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
-    let file_path: PathBuf = [ETH_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(ETH_KEYS_DIR).join(pk_hex);
     delete_key(file_path)
 }
 
 /// Deletes the BLS secret key saved at the specified path
 pub fn delete_bls_key(pk_hex: &str) -> Result<()> {
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
-    let file_path: PathBuf = [BLS_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(BLS_KEYS_DIR).join(pk_hex);
     delete_key(file_path)
 }
 
@@ -102,19 +109,19 @@ fn key_exists(file_path: &PathBuf) -> bool {
 /// Return true if the ETH key at the specified path exists
 pub fn eth_key_exists(pk_hex: &str) -> bool {
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
-    let file_path: PathBuf = [ETH_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(ETH_KEYS_DIR).join(pk_hex);
     key_exists(&file_path)
 }
 
 /// Return true if the BLS key at the specified path exists
 pub fn bls_key_exists(pk_hex: &str) -> bool {
     let pk_hex: &str = strip_0x_prefix!(pk_hex);
-    let file_path: PathBuf = [BLS_KEYS_DIR, pk_hex].iter().collect();
+    let file_path: PathBuf = storage_path(BLS_KEYS_DIR).join(pk_hex);
     key_exists(&file_path)
 }
 
 /// Return the file names in the specified directory
-fn list_fnames(path_to_dir: &str) -> Result<Vec<String>> {
+fn list_fnames(path_to_dir: impl AsRef<std::path::Path>) -> Result<Vec<String>> {
     let paths = fs::read_dir(path_to_dir).with_context(|| "No keys saved in dir")?;
 
     let mut keys: Vec<String> = Vec::new();
@@ -139,13 +146,13 @@ fn list_fnames(path_to_dir: &str) -> Result<Vec<String>> {
 /// Returns the file names of each of the saved bls secret keys, where each fname
 /// is assumed to be the compressed public key in hex without the `0x` prefix.
 pub fn list_bls_keys() -> Result<Vec<String>> {
-    list_fnames(BLS_KEYS_DIR)
+    list_fnames(storage_path(BLS_KEYS_DIR))
 }
 
 /// Returns the file names of each of the saved eth secret keys, where each fname
 /// is assumed to be the eth wallet address derived from the eth public key in hex without the `0x` prefix.
 pub fn list_eth_keys() -> Result<Vec<String>> {
-    list_fnames(ETH_KEYS_DIR)
+    list_fnames(storage_path(ETH_KEYS_DIR))
 }
 
 #[cfg(test)]

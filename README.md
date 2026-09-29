@@ -14,7 +14,7 @@ The guardian binary runs the guardian enclave RPC server. It is responsible for:
 
 **Used by**: [Reef](https://github.com/PufferFinance/reef) (reef-guardian) via the `GuardianClientTrait` HTTP client.
 
-**Deployment**: Must be deployed to GCP with TDX for attestation to work. The CVM Agent handles TDX DCAP attestation and signs payloads with the session key.
+**Deployment**: Must be deployed to GCP with TDX for attestation to work. The atakit portal handles TDX DCAP attestation and signs payloads with the session key.
 
 ### `validator`
 
@@ -30,13 +30,13 @@ The validator binary runs the validator enclave RPC server. It is responsible fo
 
 ## TDX attestation
 
-The CVM Agent runs inside the TDX Confidential VM and communicates with the binaries over a Unix socket (`/app/cvm-agent.sock`). Not all endpoints use TDX — only those that need to produce or verify attestation evidence.
+The atakit portal runs inside the TDX Confidential VM and communicates with the binaries over a Unix socket (`/run/atakit-portal.sock`). Not all endpoints use TDX — only those that need to produce or verify attestation evidence.
 
 ### guardian
 
 | Endpoint | TDX usage |
 | -------- | --------- |
-| `POST /eth/v1/keygen` | **Produces attestation.** Generates an ETH key and calls `AttestationEvidence::new()` to sign the public key via the CVM Agent. The returned evidence proves the key was generated inside a TDX enclave. |
+| `POST /eth/v1/keygen` | **Produces attestation.** Generates an ETH key and calls `AttestationEvidence::new()` to sign the public key via the atakit portal. The returned evidence proves the key was generated inside a TDX enclave. |
 | `POST /guardian/v1/validate-custody` | **Verifies attestation.** When `verify_session` is true, calls `verify_session_evidence()` which reconstructs the validator's attestation payload and verifies its signature on-chain via `SessionRegistry.verifySessionSignature()`. This confirms the BLS keygen payload came from a genuine TDX validator enclave. |
 | `GET /eth/v1/keygen` | No TDX — lists existing ETH keys from disk. |
 | `POST /guardian/v1/sign-exit` | No TDX — signs with the stored BLS key share. |
@@ -46,7 +46,7 @@ The CVM Agent runs inside the TDX Confidential VM and communicates with the bina
 
 | Endpoint | TDX usage |
 | -------- | --------- |
-| `POST /bls/v1/keygen` | **Produces attestation** when `do_remote_attestation` is true. Generates BLS keys with threshold secret sharing, then calls `AttestationEvidence::new()` to sign the keygen payload via the CVM Agent. When false, returns default empty evidence. |
+| `POST /bls/v1/keygen` | **Produces attestation** when `do_remote_attestation` is true. Generates BLS keys with threshold secret sharing, then calls `AttestationEvidence::new()` to sign the keygen payload via the atakit portal. When false, returns default empty evidence. |
 | `GET /eth/v1/keystores` | No TDX — lists existing BLS keys from disk. |
 | `POST /api/v1/eth2/sign/:bls_pk_hex` | No TDX — BLS signing with stored key. |
 | `GET /api/v1/eth2/publicKeys` | No TDX — lists BLS public keys. |
@@ -63,65 +63,64 @@ Both reef and coral also depend on `puffersecuresigner` as a Rust library crate 
 
 ## Development
 
-Uses [atakit](https://github.com/automata-network/atakit) for building, packaging, and deploying TDX workloads. Install it with:
+Start with [From a fresh checkout to local development and Hoodi deployment](docs/local-development.md)
+for installation, keys, Anvil, contract deployment, local debugging, and cloud deployment.
+
+Use the current atakit master CLI (manifest format 8) with `workload build --file`
+and Emulator support; see [container/README.md](container/README.md) for binary
+selection and the matching Base Image.
+
+### Local development
+
+The portal client sends the original business payload over HTTP/JSON on the
+workload Unix socket. It verifies the returned signing digest, session key
+fingerprint, and signature. Callers do not add the portal signing domain themselves.
+
+Run the focused wire-protocol and registry ABI tests without TDX hardware:
 
 ```bash
-git clone https://github.com/automata-network/atakit
-cd atakit
-just install
+cargo test --locked --test portal_client --test session_registry_abi
 ```
 
-### Local development with sim-agent
+For native or Compose development with emulated Portal sessions, use
+[the Emulator workflow](container/README.md#local-emulator) (`just emulator-up`,
+`just run guardian`, or `just compose guardian up --build`).
+For the IDs to use in custody requests and contract allowlists, read
+[workload identity and business allowlists](docs/local-development.md#workload-identity-and-business-allowlists).
+Emulator preserves business authorization checks but simulates hardware evidence;
+local success does not establish production code identity.
 
-The `atakit sim-agent` command simulates the CVM Agent locally without TDX hardware. It starts an embedded Anvil node, registers temporary workloads, and serves mock `/sign-message` and `/rotate-key` endpoints over Unix sockets.
+For a hands-on introduction, follow the [local testing guide](docs/testing.md):
+Guardian keygen → Validator keygen → custody, with isolated test data and
+copyable HTTP requests. The guide separates business testing from TEE validation.
 
-See [docs/local-development.md](docs/local-development.md) for the full setup guide, including deploying Puffer contracts and whitelisting workload IDs.
-
-```bash
-# 1. Start anvil
-anvil --fork-url https://rpc.hoodi.ethpandaops.io
-
-# 2. Deploy contracts against anvil (see local-development.md)
-
-# 3. Start sim-agent — registers dev workloads and starts mock CVM Agent
-atakit sim-agent --rpc-url http://localhost:8545
-
-# 4. Run services via docker compose
-docker compose -f container/guardian/docker-compose.yml up
-docker compose -f container/validator/docker-compose.yml up
-```
-
-Alternatively, set `CVM_AGENT_STUB=true` to bypass the CVM Agent entirely and return empty attestation evidence (useful for unit tests):
-
-```bash
-CVM_AGENT_STUB=true cargo run --bin guardian
-```
+Use Emulator for local attestation requests and a real Portal for CVM deployments.
+Portal provides session signatures and owner evidence for the attestation flow.
 
 ## Deployment
 
-Workloads are deployed to GCP TDX-capable VMs (`c3-standard-4`) using atakit. The project's `atakit.json` defines workloads for each binary with encrypted 10 GB data disks.
+Workloads target GCP TDX VMs (`c3-standard-4`) on Hoodi using
+`automata-linux:v0.3.1-debug`. The Guardian and Validator definitions under `container/` replace
+the old `atakit.json` and use separate encrypted 10 GB data disks.
+
+See [Workload build and deployment](container/README.md) for the format-8 toolchain
+requirement, configuration, and verification boundaries.
 
 ### Build and deploy
 
 ```bash
-# Build workload package (produces a measured artifact — its hash is the workload_id)
-atakit workload build guardian
-
-# Publish workload on-chain
-atakit workload publish guardian --rpc-url $RPC_URL --owner-private-key $PRIVATE_KEY
-
-# Deploy to GCP
-atakit deploy guardian-tdx --platform gcp
+# Run from the repository root with the local atakit CLI supporting --file.
+atakit workload build -d . --file container/guardian/atakit-workload.toml -o build/workloads
+atakit workload build -d . --file container/validator/atakit-workload.toml -o build/workloads
 ```
 
 ### Configuration
 
-Each service has a docker-compose file under `container/<service>/` with:
-
-- **`env`** — environment variables (`RUST_LOG`, port). These are measured and included in the workload hash.
-- **`network_config.json`** — fork info and network details. Mounted read-only at `/config/network_config.json`. Update for your target network before deploying.
-- **`cvm-agent.sock`** — Unix socket for CVM Agent communication, mounted at `/app/cvm-agent.sock`.
-- **Named volume** — encrypted data disk at `/data` for key storage.
+Each `container/<service>/atakit-workload.toml` declares the measured environment,
+Hoodi genesis fork version, portal socket access, ports, and persistent `/data`
+storage. Configure Hoodi, image repositories, GCP targets, and signing keys in
+your atakit operator configuration. Emulator generates a separate Compose file
+for each workload; see [container/README.md](container/README.md) for usage.
 
 ### Port mapping
 

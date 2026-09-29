@@ -1,3 +1,17 @@
-./target
-# skip rustup toolchain file because the dockerfile already specifies the toolchain
-rust-toolchain.toml
+# The Rust image is built from the repository root. Send only build inputs.
+# Runtime data, keys, operator config, tests, and generated archives stay local.
+**
+!Cargo.toml
+!Cargo.lock
+!src/
+!src/**
+!container/
+!container/Dockerfile
+!.dockerignore
+
+!crates/
+!crates/atakit-portal-client/
+!crates/atakit-portal-client/Cargo.toml
+!crates/atakit-portal-client/README.md
+!crates/atakit-portal-client/src/
+!crates/atakit-portal-client/src/**

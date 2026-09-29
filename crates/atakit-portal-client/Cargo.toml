@@ -1,0 +1,29 @@
+[package]
+name = "atakit-portal-client"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+description = "Workload-facing atakit Portal client over Unix sockets"
+readme = "README.md"
+
+[dependencies]
+alloy = { version = "=1.7.3", default-features = false, features = ["std", "sol-types", "k256", "serde"] }
+bytes = "1"
+http = "1"
+tokio = { version = "1", features = ["net", "time", "fs"] }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
+serde_json_canonicalizer = "0.3"
+thiserror = "2"
+
+[dev-dependencies]
+alloy = { version = "=1.7.3", default-features = false, features = ["signer-local"] }
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tempfile = "3"

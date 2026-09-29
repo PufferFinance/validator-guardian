@@ -4,7 +4,7 @@
 //! to verify that a CVM session signature is valid and the session is active.
 //! No transaction is submitted — this is a read-only RPC call.
 
-use alloy::primitives::{Address, B256, Bytes};
+use alloy::primitives::{Address, Bytes, B256};
 use alloy::providers::ProviderBuilder;
 use alloy::sol;
 use anyhow::{Context, Result};
@@ -19,8 +19,6 @@ sol! {
         }
 
         struct CVMSession {
-            bytes32 sessionId;
-            bytes32 owner;
             bytes32 akPubKeyFingerprint;
             bytes32 tpmSigningKeyFingerprint;
             bytes32 sessionKeyFingerprint;
@@ -29,8 +27,7 @@ sol! {
             bytes32 platformProfileId;
             bytes32 measurementVariantId;
             uint64 registeredAt;
-            uint64 expiresAt;
-            bool isActive;
+            uint64 sessionExpiresAt;
         }
 
         function verifySessionSignature(
@@ -43,6 +40,8 @@ sol! {
         function getSession(bytes32 sessionId) external view returns (CVMSession memory session);
 
         function isSessionActive(bytes32 sessionId) external view returns (bool);
+
+        function getSessionOwner(bytes32 sessionId) external view returns (bytes32 ownerFingerprint);
     }
 }
 
@@ -61,8 +60,7 @@ pub async fn verify_session_signature(
         registry_address, session_id
     );
 
-    let provider = ProviderBuilder::new()
-        .connect_http(rpc_url.parse().context("Invalid RPC URL")?);
+    let provider = ProviderBuilder::new().connect_http(rpc_url.parse().context("Invalid RPC URL")?);
 
     let registry = ISessionRegistry::new(registry_address, &provider);
 
@@ -86,8 +84,7 @@ pub async fn get_session(
         registry_address, session_id
     );
 
-    let provider = ProviderBuilder::new()
-        .connect_http(rpc_url.parse().context("Invalid RPC URL")?);
+    let provider = ProviderBuilder::new().connect_http(rpc_url.parse().context("Invalid RPC URL")?);
 
     let registry = ISessionRegistry::new(registry_address, &provider);
 
