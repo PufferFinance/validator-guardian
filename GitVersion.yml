@@ -3,7 +3,7 @@ increment: Inherit
 update-build-number: true
 branches:
   main:
-    regex: ^main$
+    regex: '^(main|AB#4275/update-to-tdx)$'
     is-mainline: true
   release:
     regex: .+release?[/-]
