@@ -152,9 +152,9 @@ automata = { repo = "automata-network/automata-linux" }
 [chains.hoodi]
 rpc_url = "https://ethereum-hoodi-rpc.publicnode.com"
 chain_id = 560048
-session_registry = "0x7575BceC155b272077C87aD3Ae5Ef54Cf9DC6601"
-workload_registry = "0x3a2E3D05cAAb7261e97F27ceDdffFbC9eEEe6b0D"
-base_image_registry = "0x6b837e4Cc2A7BDaA1d938CEE7fa0b82458dA0b14"
+session_registry = "0xafbdf3e5f515f126C09EE5f01CF2B4e0E426b13A"
+workload_registry = "0xE4B77052e0F9839F95A9e49F531d568F17D260dB"
+base_image_registry = "0x8C5b11Ff975e325417aED3A61Cb37F513F4f27e3"
 
 [keys.publisher]
 type = "es256k"
@@ -333,7 +333,7 @@ contract SessionSignatureDemo {
 SOL
 
 export DEV_RPC=http://127.0.0.1:8545
-export SESSION_REGISTRY=0x7575BceC155b272077C87aD3Ae5Ef54Cf9DC6601
+export SESSION_REGISTRY=0xafbdf3e5f515f126C09EE5f01CF2B4e0E426b13A
 export DEV_SENDER=$(cast rpc --rpc-url "$DEV_RPC" eth_accounts | jq -er '.[0]')
 forge build --root .atakit-emulator/contracts
 forge create --root .atakit-emulator/contracts \
@@ -679,7 +679,7 @@ is not required:
 
 ```bash
 export HOODI_RPC=https://ethereum-hoodi-rpc.publicnode.com
-export SESSION_REGISTRY=0x7575BceC155b272077C87aD3Ae5Ef54Cf9DC6601
+export SESSION_REGISTRY=0xafbdf3e5f515f126C09EE5f01CF2B4e0E426b13A
 cast chain-id --rpc-url "$HOODI_RPC"
 cast code "$SESSION_REGISTRY" --rpc-url "$HOODI_RPC"
 forge create --root .atakit-emulator/contracts \
