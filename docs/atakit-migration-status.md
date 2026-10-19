@@ -24,16 +24,13 @@ operator. No cloud resources or chain transactions were created.
 - Network: Ethereum Hoodi, chain ID 560048.
 - Platform: GCP Intel TDX.
 - Base image: `automata-linux:v0.3.0-debug`.
-- SessionRegistry: `0xafbdf3e5f515f126C09EE5f01CF2B4e0E426b13A`.
-- WorkloadRegistry: `0xE4B77052e0F9839F95A9e49F531d568F17D260dB`.
-- BaseImageRegistry: `0x8C5b11Ff975e325417aED3A61Cb37F513F4f27e3`.
+- SessionRegistry: `0x7575BceC155b272077C87aD3Ae5Ef54Cf9DC6601`.
+- WorkloadRegistry: `0x3a2E3D05cAAb7261e97F27ceDdffFbC9eEEe6b0D`.
+- BaseImageRegistry: `0x6b837e4Cc2A7BDaA1d938CEE7fa0b82458dA0b14`.
 
-These are Puffer's own deployment of automata-tee-workload-measurement at
-`blocksec-20260909-final-audited` (`0e0991b`), the commit Puffer's audited
-contracts pin. Automata's newer Hoodi deployment (SessionRegistry
-`0x7575BceC155b272077C87aD3Ae5Ef54Cf9DC6601`) was deployed before the BlockSec fixes and is
-superseded for Puffer, as is the earlier selection
-`0xB247950fBBFCE245641e433AFd7d8884328CE5A1`.
+The operator explicitly selected this newer registry deployment after updating
+atakit-portal. The earlier SessionRegistry selection,
+`0xB247950fBBFCE245641e433AFd7d8884328CE5A1`, is superseded.
 Configure these chain settings in the atakit operator configuration alongside
 the GCP provider/target and owner/gas keys.
 
